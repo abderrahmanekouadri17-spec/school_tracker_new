@@ -29,11 +29,24 @@ jobs:
       - name: تحميل مكتبات المشروع
         run: flutter pub get
 
-      # 👇 تم تحويل البناء لـ debug لتخطي تعارض مكاتب الـ release
+      # 👇 الضربة القاضية: ضبط وتحديث إعدادات أندرويد الداخلية لتتوافق مع شروط كودك والمكتبات
+      - name: تهيئة وتحديث إعدادات Android SDK الصارمة
+        run: |
+          if [ -f android/app/build.gradle ]; then
+            # 1. رفع الحد الأدنى للـ SDK إلى 23 (مطلوب إجبارياً لمكتبة البصمة local_auth والمكتبات الأخرى)
+            sed -i 's/minSdkVersion .*/minSdkVersion 23/g' android/app/build.gradle
+            sed -i 's/minSdkVersion = .*/minSdkVersion = 23/g' android/app/build.gradle
+            
+            # 2. رفع إصدار التجميع والـ target إلى 34 لضمان التوافق الكامل
+            sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
+            sed -i 's/compileSdkVersion = .*/compileSdkVersion = 34/g' android/app/build.gradle
+            sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
+            sed -i 's/targetSdkVersion = .*/targetSdkVersion = 34/g' android/app/build.gradle
+          fi
+
       - name: بناء ملف الـ APK
         run: flutter build apk --debug
 
-      # 👇 تعديل مسار التقاط الملف ليتوافق مع نسخة الـ debug الشاملة
       - name: توفير الـ APK للتحميل
         uses: actions/upload-artifact@v4
         with:
