@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.example.school_tracker_app_new"
     compileSdk = 34
-    ndkVersion = flutter.ndkVersion
+    // ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
