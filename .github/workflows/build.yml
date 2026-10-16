@@ -29,19 +29,13 @@ jobs:
       - name: تحميل مكتبات المشروع
         run: flutter pub get
 
-      # 👇 الضربة القاضية: ضبط وتحديث إعدادات أندرويد الداخلية لتتوافق مع شروط كودك والمكتبات
-      - name: تهيئة وتحديث إعدادات Android SDK الصارمة
+      # 👇 الضربة القاضية: منع تحميل الـ NDK نهائياً وتعطيله في ملفات الخصائص قبل البناء
+      - name: منع تحميل الـ NDK برمجياً
         run: |
-          if [ -f android/app/build.gradle ]; then
-            # 1. رفع الحد الأدنى للـ SDK إلى 23 (مطلوب إجبارياً لمكتبة البصمة local_auth والمكتبات الأخرى)
-            sed -i 's/minSdkVersion .*/minSdkVersion 23/g' android/app/build.gradle
-            sed -i 's/minSdkVersion = .*/minSdkVersion = 23/g' android/app/build.gradle
-            
-            # 2. رفع إصدار التجميع والـ target إلى 34 لضمان التوافق الكامل
-            sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
-            sed -i 's/compileSdkVersion = .*/compileSdkVersion = 34/g' android/app/build.gradle
-            sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
-            sed -i 's/targetSdkVersion = .*/targetSdkVersion = 34/g' android/app/build.gradle
+          mkdir -p android
+          echo "android.dir=" > android/local.properties
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i '/ndkVersion/d' android/app/build.gradle.kts
           fi
 
       - name: بناء ملف الـ APK
