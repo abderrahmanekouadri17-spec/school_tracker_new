@@ -10,6 +10,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  
+  # 👇 هذه هي الحلقة المفقودة التي ستنهي المشكلة وتفعل مكتبة اللغة العربية والترجمات
+  flutter_localizations:
+    sdk: flutter
+
   path_provider: ^2.1.1
   cupertino_icons: ^1.0.8
   sqflite: ^2.4.4+1
