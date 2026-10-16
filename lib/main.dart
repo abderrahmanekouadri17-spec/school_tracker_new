@@ -22,6 +22,14 @@ String todayStr() {
   return '$d/$m/${now.year}';
 }
 
+// دالة موحدة لتوليد الوقت الحالي بالصيغة الرسمية HH:mm
+String currentTimeStr() {
+  final now = DateTime.now();
+  final h = now.hour.toString().padLeft(2, '0');
+  final m = now.minute.toString().padLeft(2, '0');
+  return '$h:$m';
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SchoolData.loadData();
@@ -92,9 +100,38 @@ class LessonNote {
       );
 }
 
+class AttendanceDetail {
+  String status; // حاضر، غائب، متأخر، هروب، خروج بإذن، معفى
+  String? time;   // مثال: 08:25
+  String? reason; // مثال: عيادة طبية / استدعاء إدارة
+
+  AttendanceDetail({
+    required this.status,
+    this.time,
+    this.reason,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'status': status,
+        'time': time,
+        'reason': reason,
+      };
+
+  factory AttendanceDetail.fromJson(dynamic json) {
+    if (json is String) {
+      return AttendanceDetail(status: json);
+    }
+    return AttendanceDetail(
+      status: json['status'] ?? 'حاضر',
+      time: json['time'],
+      reason: json['reason'],
+    );
+  }
+}
+
 class DailyAttendanceRecord {
   String date;
-  Map<String, String> studentStatuses; // regNumber -> status
+  Map<String, AttendanceDetail> studentStatuses; // regNumber -> AttendanceDetail
 
   DailyAttendanceRecord({
     required this.date,
@@ -103,16 +140,22 @@ class DailyAttendanceRecord {
 
   Map<String, dynamic> toJson() => {
         'date': date,
-        'studentStatuses': studentStatuses,
+        'studentStatuses':
+            studentStatuses.map((k, v) => MapEntry(k, v.toJson())),
       };
 
-  factory DailyAttendanceRecord.fromJson(Map<String, dynamic> json) =>
-      DailyAttendanceRecord(
-        date: json['date'] ?? todayStr(),
-        studentStatuses: json['studentStatuses'] != null
-            ? Map<String, String>.from(json['studentStatuses'])
-            : {},
-      );
+  factory DailyAttendanceRecord.fromJson(Map<String, dynamic> json) {
+    Map<String, AttendanceDetail> details = {};
+    if (json['studentStatuses'] != null) {
+      (json['studentStatuses'] as Map).forEach((k, v) {
+        details[k.toString()] = AttendanceDetail.fromJson(v);
+      });
+    }
+    return DailyAttendanceRecord(
+      date: json['date'] ?? todayStr(),
+      studentStatuses: details,
+    );
+  }
 }
 
 class TimetableItem {
@@ -149,7 +192,9 @@ class Student {
   String regNumber;
   String birthDate;
   String birthPlace;
-  String status; // حاضر، غائب، متأخر، معفى
+  String status; // حاضر، غائب، متأخر، هروب، خروج بإذن، معفى
+  String? statusTime; // وقت تسجيل التأخر أو الهروب أو الخروج
+  String? statusReason; // سبب الإذن أو ملاحظة الواقعة
   double continuousEval;
   double exam1;
   double exam2;
@@ -165,6 +210,8 @@ class Student {
     required this.birthDate,
     required this.birthPlace,
     this.status = 'حاضر',
+    this.statusTime,
+    this.statusReason,
     this.continuousEval = 10.0,
     this.exam1 = 10.0,
     this.exam2 = 0.0,
@@ -215,6 +262,8 @@ class Student {
         'birthDate': birthDate,
         'birthPlace': birthPlace,
         'status': status,
+        'statusTime': statusTime,
+        'statusReason': statusReason,
         'continuousEval': continuousEval,
         'exam1': exam1,
         'exam2': exam2,
@@ -231,6 +280,8 @@ class Student {
         birthDate: json['birthDate'] ?? '',
         birthPlace: json['birthPlace'] ?? '',
         status: json['status'] ?? 'حاضر',
+        statusTime: json['statusTime'],
+        statusReason: json['statusReason'],
         continuousEval: (json['continuousEval'] as num?)?.toDouble() ?? 10.0,
         exam1: (json['exam1'] as num?)?.toDouble() ?? 10.0,
         exam2: (json['exam2'] as num?)?.toDouble() ?? 0.0,
@@ -1378,7 +1429,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء')),
+              child: const Text('إغلاق')),
           ElevatedButton.icon(
             icon: const Icon(Icons.copy),
             label: const Text('نسخ'),
@@ -1606,7 +1657,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
 }
 
 // ============================================================================
-// 8. لوحة تحكم القسم، التقييم، والحضور، وسجل القسم الشامل (CLASS DASHBOARD ENGINE)
+// 8. لوحة تحكم القسم، التقييم، والحضور الشامل (CLASS DASHBOARD ENGINE)
 // ============================================================================
 
 class ClassDashboardScreen extends StatefulWidget {
@@ -1727,7 +1778,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                         fontSize: 14, fontWeight: pwWidgets.FontWeight.bold)),
               ),
               pwWidgets.Center(
-                child: pwWidgets.Text('وزارة التربية الوطنية - سجل نتائج القسم الشامل',
+                child: pwWidgets.Text('وزارة التربية الوطنية - سجل نتائج ومواظبة القسم الشامل',
                     style: const pwWidgets.TextStyle(fontSize: 12)),
               ),
               pwWidgets.Divider(thickness: 1.5),
@@ -1751,6 +1802,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                       pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('الرتبة'))),
                       pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('رقم التعريف'))),
                       pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('اللقب والاسم'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('حالة المواظبة'))),
                       pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('التقويم'))),
                       pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('ف 1'))),
                       pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('ف 2'))),
@@ -1763,11 +1815,16 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                   ...sorted.asMap().entries.map((entry) {
                     int rank = entry.key + 1;
                     Student s = entry.value;
+                    String statusTxt = s.status;
+                    if (s.statusTime != null && s.statusTime!.isNotEmpty) {
+                      statusTxt += ' (${s.statusTime})';
+                    }
                     return pwWidgets.TableRow(
                       children: [
                         pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text('$rank'))),
                         pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text(s.regNumber))),
                         pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Text('${s.lastName} ${s.firstName}', style: pwWidgets.TextStyle(fontWeight: pwWidgets.FontWeight.bold))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text(statusTxt, style: const pwWidgets.TextStyle(fontSize: 8)))),
                         pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text('${s.continuousEval}'))),
                         pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text('${s.exam1}'))),
                         pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text(s.exam2 > 0 ? '${s.exam2}' : '-'))),
@@ -2026,23 +2083,50 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
     }
   }
 
+  // نافذة الإشعار المتقدمة مع رصد التوقيت والهروب والخروج بإذن
   void _sendGuardianNotification(Student student) {
+    String attendanceNotice = '';
+    if (student.status == 'هروب') {
+      attendanceNotice = '⚠️ تنبيه عاجل: تم تسجيل حالة (هروب من الحصة) في توقيت: (${student.statusTime ?? currentTimeStr()})، يرجى الاتصال بالإدارة فوراً لتبرير الوضعية.';
+    } else if (student.status == 'خروج بإذن') {
+      attendanceNotice = '📋 إشعار: غادر التلميذ الحصة بترخيص رسمي في توقيت: (${student.statusTime ?? currentTimeStr()}) بسبب: (${student.statusReason ?? "إذن إداري"}).';
+    } else if (student.status == 'متأخر') {
+      attendanceNotice = '⏰ إشعار: سجل التلميذ دخولاً متأخراً على الساعة: (${student.statusTime ?? currentTimeStr()}).';
+    } else if (student.status == 'غائب') {
+      attendanceNotice = '🔴 إشعار: التلميذ غائب عن الحصة اليوم بتاريخ: ${todayStr()}.';
+    } else {
+      attendanceNotice = '🟢 التلميذ حاضر وبحالة نظامية في الحصة.';
+    }
+
     String msg = '''
 السلام عليكم، إلى ولي أمر التلميذ(ة): ${student.lastName} ${student.firstName} (القسم: ${widget.schoolClass.name})
-حالة التلميذ الحالية: (${student.status}) في حصة ${widget.teacher.subject} بتاريخ: ${todayStr()}.
+المؤسسة: ${widget.institution.name} | المادة: ${widget.teacher.subject}
+التاريخ: ${todayStr()}
+
+$attendanceNotice
+
 معدل المادة الفصلي: ${student.average.toStringAsFixed(2)} / 20 (${student.appreciation}).
-مع تحيات الأستاذ: ${widget.teacher.name} - مؤسسة: ${widget.institution.name}.
+مع تحيات الأستاذ(ة): ${widget.teacher.name}.
 ''';
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('إشعار ولي الأمر الفوري'),
+        title: Row(
+          children: [
+            Icon(
+              student.status == 'هروب' ? Icons.warning_amber_rounded : Icons.mark_chat_unread_outlined,
+              color: student.status == 'هروب' ? Colors.red : const Color(0xFF059669),
+            ),
+            const SizedBox(width: 8),
+            const Text('إشعار ولي الأمر الفوري'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('النص المنسق للمشاركة عبر WhatsApp أو SMS:',
+            const Text('النص المنسق للمشاركة الفورية عبر WhatsApp أو SMS:',
                 style: TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 8),
             Container(
@@ -2060,7 +2144,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
               child: const Text('إغلاق')),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF059669),
+                backgroundColor: student.status == 'هروب' ? Colors.red : const Color(0xFF059669),
                 foregroundColor: Colors.white),
             icon: const Icon(Icons.copy),
             label: const Text('نسخ الرسالة'),
@@ -2068,7 +2152,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
               Clipboard.setData(ClipboardData(text: msg));
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('تم نسخ نص الرسالة بنجاح!')));
+                  content: Text('تم نسخ نص الإشعار بنجاح!')));
             },
           ),
         ],
@@ -2158,11 +2242,89 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
     );
   }
 
-  void _updateAttendanceForToday(Student student, String newStatus) {
+  // ✅ نافذة تحديد الوقت والسبب للحالات الخاصة (تأخر، هروب، خروج بإذن)
+  void _showAttendanceActionDialog(Student student, String targetStatus) {
+    if (targetStatus == 'حاضر' || targetStatus == 'غائب' || targetStatus == 'معفى') {
+      _applyAttendanceStatus(student, targetStatus, null, null);
+      return;
+    }
+
+    final timeCtrl = TextEditingController(text: currentTimeStr());
+    final reasonCtrl = TextEditingController(
+      text: targetStatus == 'خروج بإذن'
+          ? 'عيادة طبية'
+          : (targetStatus == 'هروب' ? 'مغادرة الحصة دون ترخيص' : 'تأخر في الدخول'),
+    );
+
+    String title = '';
+    String labelField = 'السبب / الملاحظة';
+    if (targetStatus == 'متأخر') {
+      title = 'تسجيل دخول متأخر: ${student.lastName} ${student.firstName}';
+      labelField = 'سبب التأخر (اختياري)';
+    } else if (targetStatus == 'هروب') {
+      title = '🚨 تسجيل هروب من الحصة: ${student.lastName} ${student.firstName}';
+      labelField = 'ملاحظة الواقعة';
+    } else if (targetStatus == 'خروج بإذن') {
+      title = '📜 تسجيل خروج بترخيص: ${student.lastName} ${student.firstName}';
+      labelField = 'سبب الخروج والوجهة';
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: timeCtrl,
+              decoration: const InputDecoration(
+                labelText: 'توقيت التسجيل (HH:mm)',
+                prefixIcon: Icon(Icons.access_time),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              decoration: InputDecoration(
+                labelText: labelField,
+                prefixIcon: const Icon(Icons.notes),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: targetStatus == 'هروب' ? Colors.red : const Color(0xFF0F172A),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _applyAttendanceStatus(
+                student,
+                targetStatus,
+                timeCtrl.text.trim().isEmpty ? currentTimeStr() : timeCtrl.text.trim(),
+                reasonCtrl.text.trim(),
+              );
+            },
+            child: const Text('تأكيد وتسجيل'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyAttendanceStatus(
+      Student student, String newStatus, String? time, String? reason) {
     setState(() {
       student.status = newStatus;
-      String currentToday = todayStr();
+      student.statusTime = time;
+      student.statusReason = reason;
 
+      String currentToday = todayStr();
       DailyAttendanceRecord? record;
       for (var d in widget.schoolClass.dailyRecords) {
         if (d.date == currentToday) {
@@ -2175,9 +2337,17 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
         record = DailyAttendanceRecord(date: currentToday, studentStatuses: {});
         widget.schoolClass.dailyRecords.add(record);
       }
-      record.studentStatuses[student.regNumber] = newStatus;
+      record.studentStatuses[student.regNumber] = AttendanceDetail(
+        status: newStatus,
+        time: time,
+        reason: reason,
+      );
     });
     SchoolData.saveData();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 1),
+      content: Text('تم تسجيل ${student.lastName}: $newStatus ${time != null ? "($time)" : ""}'),
+    ));
   }
 
   void _markAllStudentsPresent() {
@@ -2197,7 +2367,9 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
 
       for (var s in widget.schoolClass.students) {
         s.status = 'حاضر';
-        record.studentStatuses[s.regNumber] = 'حاضر';
+        s.statusTime = null;
+        s.statusReason = null;
+        record.studentStatuses[s.regNumber] = AttendanceDetail(status: 'حاضر');
       }
     });
     SchoolData.saveData();
@@ -2214,10 +2386,31 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
         return Colors.redAccent;
       case 'متأخر':
         return Colors.amber.shade800;
+      case 'هروب':
+        return const Color(0xFFB91C1C); // أحمر قاني تحذيري
+      case 'خروج بإذن':
+        return const Color(0xFF2563EB); // أزرق رسمي
       case 'معفى':
         return Colors.blueGrey;
       default:
         return Colors.grey;
+    }
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status) {
+      case 'حاضر':
+        return Icons.check_circle_outline;
+      case 'غائب':
+        return Icons.cancel_outlined;
+      case 'متأخر':
+        return Icons.watch_later_outlined;
+      case 'هروب':
+        return Icons.directions_run;
+      case 'خروج بإذن':
+        return Icons.assignment_outlined;
+      default:
+        return Icons.info_outline;
     }
   }
 
@@ -2264,6 +2457,9 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
 
     int totalPresentToday = widget.schoolClass.students.where((s) => s.status == 'حاضر').length;
     int totalAbsentToday = widget.schoolClass.students.where((s) => s.status == 'غائب').length;
+    int totalEscapeToday = widget.schoolClass.students.where((s) => s.status == 'هروب').length;
+    int totalLateToday = widget.schoolClass.students.where((s) => s.status == 'متأخر').length;
+    int totalPermittedToday = widget.schoolClass.students.where((s) => s.status == 'خروج بإذن').length;
 
     return Scaffold(
       appBar: AppBar(
@@ -2291,7 +2487,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          // 1. تبويب التلاميذ المطور (خالٍ من أي خطأ Overflow مع فرز فوري)
+          // 1. تبويب التلاميذ المطور مع رصد الهروب والخروج بإذن والتأخر
           Column(
             children: [
               // شريط البحث وخيارات الترتيب الأبجدي / بالمعدل
@@ -2352,42 +2548,46 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                 ),
               ),
 
-              // شريط ملخص حضور اليوم وسجل سريع
+              // شريط ملخص حضور اليوم وسجل سريع لكافة الحالات
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.grey.shade300),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Text('حضور اليوم: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        Text('$totalPresentToday حاضر 🟢', style: const TextStyle(color: Color(0xFF059669), fontWeight: FontWeight.bold, fontSize: 13)),
-                        const Text(' | '),
-                        Text('$totalAbsentToday غائب 🔴', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                      ],
-                    ),
-                    InkWell(
-                      onTap: _markAllStudentsPresent,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF059669),
-                          borderRadius: BorderRadius.circular(8),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      const Text('اليوم: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      Text('$totalPresentToday حاضر 🟢  ', style: const TextStyle(color: Color(0xFF059669), fontWeight: FontWeight.bold, fontSize: 12)),
+                      Text('$totalAbsentToday غائب 🔴  ', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                      if (totalLateToday > 0)
+                        Text('$totalLateToday متأخر 🟡  ', style: TextStyle(color: Colors.amber.shade800, fontWeight: FontWeight.bold, fontSize: 12)),
+                      if (totalEscapeToday > 0)
+                        Text('$totalEscapeToday هروب 🚨  ', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
+                      if (totalPermittedToday > 0)
+                        Text('$totalPermittedToday بإذن 📜  ', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 12)),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: _markAllStudentsPresent,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF059669),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('تحضير الكل ✔', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                         ),
-                        child: const Text('تحضير الكل ✔', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
 
-              // قائمة التلاميذ بتصميم بطاقات فسيحة تمنع الـ Overflow نهائياً
+              // قائمة بطاقات التلاميذ الفسيحة
               Expanded(
                 child: filteredStudents.isEmpty
                     ? const Center(child: Text('لا يوجد تلاميذ مطابقون.'))
@@ -2401,16 +2601,23 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                                 ..sort((a, b) => b.average.compareTo(a.average));
                           int rank = rankSorted.indexOf(student) + 1;
 
+                          String statusDisplay = student.status;
+                          if (student.statusTime != null && student.statusTime!.isNotEmpty) {
+                            statusDisplay += ' (${student.statusTime})';
+                          }
+
                           return Card(
                             elevation: 2,
                             margin: const EdgeInsets.only(bottom: 10),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                               side: BorderSide(
-                                color: student.status == 'غائب'
-                                    ? Colors.red.shade200
-                                    : Colors.grey.shade200,
-                                width: 1,
+                                color: student.status == 'هروب'
+                                    ? Colors.red.shade400
+                                    : (student.status == 'غائب'
+                                        ? Colors.red.shade200
+                                        : Colors.grey.shade200),
+                                width: student.status == 'هروب' ? 1.5 : 1,
                               ),
                             ),
                             child: Padding(
@@ -2418,7 +2625,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // السطر الأول: الرتبة، الاسم الكامل، شارة التفوق، وحالة الحضور
+                                  // السطر الأول: الرتبة، الاسم الكامل، وشارة المواظبة المتقدمة
                                   Row(
                                     children: [
                                       CircleAvatar(
@@ -2447,19 +2654,24 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                                         const Icon(Icons.star,
                                             color: Color(0xFFF59E0B), size: 18),
                                       const SizedBox(width: 6),
-                                      // زر تبديل حالة الحضور السريع
+                                      
+                                      // زر المواظبة الشامل (حاضر، غائب، متأخر بوقت، هروب، خروج بإذن)
                                       PopupMenuButton<String>(
-                                        tooltip: 'تغيير حالة الحضور',
-                                        onSelected: (newStatus) =>
-                                            _updateAttendanceForToday(
-                                                student, newStatus),
+                                        tooltip: 'تغيير وضعية الحضور والمواظبة',
+                                        onSelected: (target) =>
+                                            _showAttendanceActionDialog(
+                                                student, target),
                                         itemBuilder: (context) => [
                                           const PopupMenuItem(
                                               value: 'حاضر', child: Text('حاضر 🟢')),
                                           const PopupMenuItem(
                                               value: 'غائب', child: Text('غائب 🔴')),
                                           const PopupMenuItem(
-                                              value: 'متأخر', child: Text('متأخر 🟡')),
+                                              value: 'متأخر', child: Text('دخول متأخر (مع وقت) 🟡')),
+                                          const PopupMenuItem(
+                                              value: 'هروب', child: Text('هروب من الحصة (مع وقت) 🚨')),
+                                          const PopupMenuItem(
+                                              value: 'خروج بإذن', child: Text('خروج بترخيص / إذن 📜')),
                                           const PopupMenuItem(
                                               value: 'معفى', child: Text('معفى ⚪')),
                                         ],
@@ -2476,18 +2688,42 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                                                     student.status),
                                                 width: 1),
                                           ),
-                                          child: Text(
-                                            student.status,
-                                            style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                                color: _getStatusColor(
-                                                    student.status)),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(_getStatusIcon(student.status),
+                                                  size: 14,
+                                                  color: _getStatusColor(
+                                                      student.status)),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                statusDisplay,
+                                                style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: _getStatusColor(
+                                                        student.status)),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
                                     ],
                                   ),
+
+                                  // إذا كان هناك سبب مدون (كالخروج بإذن أو الهروب)
+                                  if (student.statusReason != null &&
+                                      student.statusReason!.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'الملاحظة: ${student.statusReason}',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontStyle: FontStyle.italic,
+                                          color: _getStatusColor(student.status)),
+                                    ),
+                                  ],
+
                                   const Divider(height: 16),
 
                                   // السطر الثاني: تفاصيل العلامات والمعدل بوضوح
@@ -2541,16 +2777,22 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                                       ),
                                       TextButton.icon(
                                         style: TextButton.styleFrom(
-                                          foregroundColor:
-                                              const Color(0xFF059669),
+                                          foregroundColor: student.status == 'هروب'
+                                              ? Colors.red
+                                              : const Color(0xFF059669),
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 8),
                                         ),
-                                        icon: const Icon(
-                                            Icons.notifications_active,
+                                        icon: Icon(
+                                            student.status == 'هروب'
+                                                ? Icons.warning_amber
+                                                : Icons.notifications_active,
                                             size: 18),
-                                        label: const Text('إشعار الولي',
-                                            style: TextStyle(fontSize: 12)),
+                                        label: Text(
+                                            student.status == 'هروب'
+                                                ? 'إشعار هروب'
+                                                : 'إشعار الولي',
+                                            style: const TextStyle(fontSize: 12)),
                                         onPressed: () =>
                                             _sendGuardianNotification(student),
                                       ),
@@ -2754,7 +2996,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
             ],
           ),
 
-          // 4. تبويب سجل الحضور والغياب مع خيار التحضير الجماعي
+          // 4. تبويب سجل الحضور والغياب المفصل (مع رصد أوقات التأخر والهروب)
           Column(
             children: [
               Padding(
@@ -2788,26 +3030,32 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                           final record =
                               widget.schoolClass.dailyRecords[index];
                           int present = record.studentStatuses.values
-                              .where((v) => v == 'حاضر')
+                              .where((v) => v.status == 'حاضر')
                               .length;
                           int absent = record.studentStatuses.values
-                              .where((v) => v == 'غائب')
+                              .where((v) => v.status == 'غائب')
                               .length;
                           int lateCount = record.studentStatuses.values
-                              .where((v) => v == 'متأخر')
+                              .where((v) => v.status == 'متأخر')
+                              .length;
+                          int escapeCount = record.studentStatuses.values
+                              .where((v) => v.status == 'هروب')
+                              .length;
+                          int permitCount = record.studentStatuses.values
+                              .where((v) => v.status == 'خروج بإذن')
                               .length;
 
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ExpansionTile(
-                              leading: const CircleAvatar(
-                                  backgroundColor: Color(0xFF059669),
-                                  child: Icon(Icons.event, color: Colors.white)),
+                              leading: CircleAvatar(
+                                  backgroundColor: escapeCount > 0 ? Colors.red : const Color(0xFF059669),
+                                  child: Icon(escapeCount > 0 ? Icons.warning : Icons.event, color: Colors.white)),
                               title: Text('تاريخ الحصة: ${record.date}',
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold)),
                               subtitle: Text(
-                                  'الحاضرون: $present | الغائبون: $absent | المتأخرون: $lateCount'),
+                                  'حاضر: $present | غائب: $absent | متأخر: $lateCount ${escapeCount > 0 ? "| هروب: $escapeCount" : ""} ${permitCount > 0 ? "| إذن: $permitCount" : ""}'),
                               children: [
                                 Padding(
                                   padding: const EdgeInsets.all(12.0),
@@ -2827,15 +3075,24 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                                             birthDate: '',
                                             birthPlace: ''),
                                       );
+
+                                      AttendanceDetail detail = entry.value;
+                                      String label = detail.status;
+                                      if (detail.time != null && detail.time!.isNotEmpty) {
+                                        label += ' (${detail.time})';
+                                      }
+
                                       return Padding(
                                         padding: const EdgeInsets.symmetric(
-                                            vertical: 2.0),
+                                            vertical: 3.0),
                                         child: Row(
                                           mainAxisAlignment:
                                               MainAxisAlignment.spaceBetween,
                                           children: [
-                                            Text(
-                                                '${student.lastName} ${student.firstName} (${student.regNumber})'),
+                                            Expanded(
+                                              child: Text(
+                                                  '${student.lastName} ${student.firstName} (${student.regNumber}) ${detail.reason != null && detail.reason!.isNotEmpty ? " - " + detail.reason! : ""}'),
+                                            ),
                                             Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
@@ -2843,18 +3100,19 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                                                       vertical: 2),
                                               decoration: BoxDecoration(
                                                 color: _getStatusColor(
-                                                        entry.value)
+                                                        detail.status)
                                                     .withOpacity(0.2),
                                                 borderRadius:
                                                     BorderRadius.circular(6),
                                               ),
                                               child: Text(
-                                                entry.value,
+                                                label,
                                                 style: TextStyle(
                                                   color: _getStatusColor(
-                                                      entry.value),
+                                                      detail.status),
                                                   fontWeight:
                                                       FontWeight.bold,
+                                                  fontSize: 11,
                                                 ),
                                               ),
                                             ),
