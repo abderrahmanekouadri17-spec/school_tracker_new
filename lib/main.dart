@@ -29,7 +29,7 @@ void main() async {
 }
 
 // ============================================================================
-// 1. نماذج البيانات الهندسية الشاملة (DATA MODELS)
+// 1. نماذج البيانات (DATA MODELS)
 // ============================================================================
 
 class BehaviorLog {
@@ -174,8 +174,7 @@ class Student {
     List<BehaviorLog>? logs,
   }) : logs = logs ?? [];
 
-  /// حساب معدل المادة وفق المنظومة الرسمية:
-  /// إذا كان الفرض 2 مسجلاً (> 0) يحسب معدل الفروض، وإلا يحسب بالفرض 1 فقط
+  /// حساب معدل المادة وفق المنظومة الرسمية الجزائرية
   double get average {
     double continuousMonitoring;
     if (exam2 > 0.0) {
@@ -314,7 +313,7 @@ class Teacher {
   factory Teacher.fromJson(Map<String, dynamic> json) => Teacher(
         name: json['name'] ?? '',
         subject: json['subject'] ?? '',
-        imagePath: json['imagePath'], // ✅ تم التصحيح: استرجاع الصورة من الذاكرة
+        imagePath: json['imagePath'],
         classes: json['classes'] != null
             ? (json['classes'] as List)
                 .map((c) => SchoolClass.fromJson(c))
@@ -351,7 +350,7 @@ class Institution {
 }
 
 // ============================================================================
-// 2. إدارة التخزين ومعالجة البيانات (STORAGE & ENGINE)
+// 2. إدارة التخزين وقراءة البيانات (STORAGE & ENGINE)
 // ============================================================================
 
 class SchoolData {
@@ -422,7 +421,7 @@ class SchoolData {
                       test: 18.5),
                   Student(
                       firstName: 'يوسف',
-                      lastName: 'براهيمي',
+                      lastName: 'إبراهيمي',
                       regNumber: '2026103',
                       birthDate: '10/02/2007',
                       birthPlace: 'الجلفة',
@@ -1379,7 +1378,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('إغلاق')),
+              child: const Text('إلغاء')),
           ElevatedButton.icon(
             icon: const Icon(Icons.copy),
             label: const Text('نسخ'),
@@ -1607,7 +1606,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
 }
 
 // ============================================================================
-// 8. لوحة تحكم القسم، التقييم، الحضور والغياب (CLASS DASHBOARD ENGINE)
+// 8. لوحة تحكم القسم، التقييم، والحضور، وسجل القسم الشامل (CLASS DASHBOARD ENGINE)
 // ============================================================================
 
 class ClassDashboardScreen extends StatefulWidget {
@@ -1630,6 +1629,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String _studentSearchQuery = '';
+  String _sortCriteria = 'alphabetical'; // alphabetical, gradeDesc, gradeAsc, regNumber
 
   @override
   void initState() {
@@ -1703,315 +1703,127 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
     );
   }
 
-  // مستكشف ملفات الإكسل مع حماية شاملة لنظام أندرويد 11+
-  Future<void> _importStudentsFromExcel() async {
+  // تصدير سجل القسم المجمع بالكامل (Official Class Register PDF)
+  Future<void> _exportFullClassRegisterPdf() async {
     try {
-      List<File> excelFiles = [];
-      List<Directory> searchDirs = [];
+      final pdf = pwWidgets.Document();
+      final arabicFont = await PdfGoogleFonts.cairoRegular();
+      final arabicBold = await PdfGoogleFonts.cairoBold();
 
-      try {
-        final docDir = await getApplicationDocumentsDirectory();
-        searchDirs.add(docDir);
-      } catch (_) {}
+      List<Student> sorted = List.from(widget.schoolClass.students)
+        ..sort((a, b) => b.average.compareTo(a.average));
 
-      // التحقق بأمان دون أن يتوقف التطبيق في حال رفض الصلاحية
-      for (var path in [
-        '/storage/emulated/0/Download',
-        '/storage/emulated/0/Documents'
-      ]) {
-        try {
-          final dir = Directory(path);
-          if (dir.existsSync()) {
-            searchDirs.add(dir);
-          }
-        } catch (_) {}
-      }
-
-      for (var dir in searchDirs) {
-        try {
-          final entities = dir.listSync();
-          for (var entity in entities) {
-            if (entity is File) {
-              final pathLower = entity.path.toLowerCase();
-              if (pathLower.endsWith('.xlsx') || pathLower.endsWith('.xls')) {
-                excelFiles.add(entity);
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: const [
-              Icon(Icons.table_chart, color: Color(0xFF059669)),
-              SizedBox(width: 8),
-              Text('اختر ملف الإكسل (Excel)',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16)),
-            ],
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 320,
-            child: excelFiles.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.folder_open,
-                              size: 54, color: Colors.grey),
-                          SizedBox(height: 12),
-                          Text(
-                            'لم يتم العثور على ملفات .xlsx في مجلد Downloads.\nيرجى وضع ملف القائمة في مجلد التنزيلات بهاتفك أو مجلد المستندات.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: Colors.grey, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: excelFiles.length,
-                    itemBuilder: (ctx, i) {
-                      final f = excelFiles[i];
-                      final fileName = f.path.split('/').last;
-                      return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        child: ListTile(
-                          leading: const Icon(Icons.description,
-                              color: Color(0xFF059669)),
-                          title: Text(fileName,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13)),
-                          subtitle: Text(f.path,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 10, color: Colors.grey)),
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            Uint8List bytes = await f.readAsBytes();
-                            _processExcelBytes(bytes);
-                          },
-                        ),
-                      );
-                    },
+      pdf.addPage(
+        pwWidgets.MultiPage(
+          pageFormat: pw.PdfPageFormat.a4,
+          textDirection: pwWidgets.TextDirection.rtl,
+          theme: pwWidgets.ThemeData.withFont(
+              base: arabicFont, bold: arabicBold),
+          build: (pwWidgets.Context context) {
+            return [
+              pwWidgets.Center(
+                child: pwWidgets.Text('الجمهورية الجزائرية الديمقراطية الشعبية',
+                    style: pwWidgets.TextStyle(
+                        fontSize: 14, fontWeight: pwWidgets.FontWeight.bold)),
+              ),
+              pwWidgets.Center(
+                child: pwWidgets.Text('وزارة التربية الوطنية - سجل نتائج القسم الشامل',
+                    style: const pwWidgets.TextStyle(fontSize: 12)),
+              ),
+              pwWidgets.Divider(thickness: 1.5),
+              pwWidgets.SizedBox(height: 6),
+              pwWidgets.Row(
+                mainAxisAlignment: pwWidgets.MainAxisAlignment.spaceBetween,
+                children: [
+                  pwWidgets.Text('المؤسسة: ${widget.institution.name}'),
+                  pwWidgets.Text('القسم: ${widget.schoolClass.name}'),
+                  pwWidgets.Text('الأستاذ: ${widget.teacher.name} (${widget.teacher.subject})'),
+                  pwWidgets.Text('تاريخ الإنجاز: ${todayStr()}'),
+                ],
+              ),
+              pwWidgets.SizedBox(height: 12),
+              pwWidgets.Table(
+                border: pwWidgets.TableBorder.all(color: pw.PdfColors.black, width: 0.8),
+                children: [
+                  pwWidgets.TableRow(
+                    decoration: const pwWidgets.BoxDecoration(color: pw.PdfColors.grey300),
+                    children: [
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('الرتبة'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('رقم التعريف'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('اللقب والاسم'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('التقويم'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('ف 1'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('ف 2'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('الاختبار'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('المعدل'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('التقدير'))),
+                      pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(5), child: pwWidgets.Center(child: pwWidgets.Text('قرار المجلس'))),
+                    ],
                   ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('إلغاء')),
-          ],
+                  ...sorted.asMap().entries.map((entry) {
+                    int rank = entry.key + 1;
+                    Student s = entry.value;
+                    return pwWidgets.TableRow(
+                      children: [
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text('$rank'))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text(s.regNumber))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Text('${s.lastName} ${s.firstName}', style: pwWidgets.TextStyle(fontWeight: pwWidgets.FontWeight.bold))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text('${s.continuousEval}'))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text('${s.exam1}'))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text(s.exam2 > 0 ? '${s.exam2}' : '-'))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text('${s.test}'))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text(s.average.toStringAsFixed(2), style: pwWidgets.TextStyle(fontWeight: pwWidgets.FontWeight.bold)))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text(s.appreciation))),
+                        pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(4), child: pwWidgets.Center(child: pwWidgets.Text(s.councilDecision, style: const pwWidgets.TextStyle(fontSize: 8)))),
+                      ],
+                    );
+                  }),
+                ],
+              ),
+              pwWidgets.SizedBox(height: 18),
+              pwWidgets.Row(
+                mainAxisAlignment: pwWidgets.MainAxisAlignment.spaceBetween,
+                children: [
+                  pwWidgets.BarcodeWidget(
+                    barcode: pwWidgets.Barcode.qrCode(),
+                    data: 'سجل قسم: ${widget.schoolClass.name}\nالمؤسسة: ${widget.institution.name}\nالأستاذ: ${widget.teacher.name}\nعدد التلاميذ: ${widget.schoolClass.students.length}\nتاريخ: ${todayStr()}',
+                    width: 65,
+                    height: 65,
+                  ),
+                  pwWidgets.Container(
+                    width: 75,
+                    height: 75,
+                    decoration: pwWidgets.BoxDecoration(
+                      shape: pwWidgets.BoxShape.circle,
+                      border: pwWidgets.Border.all(color: pw.PdfColors.blue900, width: 2),
+                    ),
+                    child: pwWidgets.Center(
+                      child: pwWidgets.Text('الختم الرسمي\nللمؤسسة\n★ 2026 ★',
+                          textAlign: pwWidgets.TextAlign.center,
+                          style: const pwWidgets.TextStyle(fontSize: 8)),
+                    ),
+                  ),
+                  pwWidgets.Text('توقيع الأستاذ(ة): ${widget.teacher.name}'),
+                ],
+              ),
+            ];
+          },
         ),
+      );
+
+      await Printing.layoutPdf(
+        onLayout: (pw.PdfPageFormat format) async => pdf.save(),
+        name: 'سجل_قسم_${widget.schoolClass.name}.pdf',
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('خطأ أثناء قراءة الملفات: $e')));
+            SnackBar(content: Text('خطأ أثناء إنشاء سجل القسم PDF: $e')));
       }
     }
   }
 
-  void _processExcelBytes(Uint8List bytes) async {
-    try {
-      var excel = excelPkg.Excel.decodeBytes(bytes);
-      int addedCount = 0;
-
-      for (var table in excel.tables.keys) {
-        var rows = excel.tables[table]!.rows;
-        if (rows.isEmpty) continue;
-
-        int startIndex = 0;
-        if (rows.isNotEmpty) {
-          String firstCell = extractCellString(rows[0][0]);
-          if (firstCell.contains('اللقب') ||
-              firstCell.contains('Nom') ||
-              firstCell.contains('الرقم')) {
-            startIndex = 1;
-          }
-        }
-
-        for (int i = startIndex; i < rows.length; i++) {
-          var row = rows[i];
-          if (row.isEmpty) continue;
-
-          String col0 = row.isNotEmpty ? extractCellString(row[0]) : '';
-          String col1 = row.length > 1 ? extractCellString(row[1]) : '';
-          String col2 = row.length > 2 ? extractCellString(row[2]) : '';
-          String col3 =
-              row.length > 3 ? extractCellString(row[3]) : '01/01/2007';
-
-          String lastName = col0;
-          String firstName = col1;
-          String regNum = col2;
-
-          if (int.tryParse(col0) != null && row.length >= 4) {
-            regNum = col1;
-            lastName = col2;
-            firstName = col3;
-          }
-
-          if (lastName.isNotEmpty || firstName.isNotEmpty) {
-            widget.schoolClass.students.add(Student(
-              lastName: lastName,
-              firstName: firstName,
-              regNumber: regNum.isEmpty
-                  ? '2026${widget.schoolClass.students.length + addedCount + 1}'
-                  : regNum,
-              birthDate: col3.isEmpty ? '01/01/2007' : col3,
-              birthPlace: 'الجلفة',
-            ));
-            addedCount++;
-          }
-        }
-      }
-
-      await SchoolData.saveData();
-      setState(() {});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text('تم استيراد $addedCount تلميذاً بنجاح من الهاتف!')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('خطأ أثناء قراءة ملف الإكسل: $e')));
-      }
-    }
-  }
-
-  void _showAddNoteDialog({LessonNote? note}) {
-    final dateCtrl = TextEditingController(text: note?.date ?? todayStr());
-    final titleCtrl = TextEditingController(text: note?.title ?? '');
-    final summaryCtrl = TextEditingController(text: note?.summary ?? '');
-    final homeworkCtrl = TextEditingController(text: note?.homework ?? '');
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-            note == null ? 'إضافة مذكرة درس جديد' : 'تعديل مذكرة الدرس'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: dateCtrl,
-                  decoration: const InputDecoration(labelText: 'التاريخ')),
-              TextField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'عنوان الدرس والمحور')),
-              TextField(
-                  controller: summaryCtrl,
-                  maxLines: 3,
-                  decoration:
-                      const InputDecoration(labelText: 'خلاصة الدرس')),
-              TextField(
-                  controller: homeworkCtrl,
-                  decoration:
-                      const InputDecoration(labelText: 'الواجب المنزلي')),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-            onPressed: () async {
-              if (titleCtrl.text.trim().isNotEmpty) {
-                setState(() {
-                  if (note == null) {
-                    widget.schoolClass.lessonNotes.add(LessonNote(
-                      date: dateCtrl.text.trim(),
-                      title: titleCtrl.text.trim(),
-                      summary: summaryCtrl.text.trim(),
-                      homework: homeworkCtrl.text.trim(),
-                    ));
-                  } else {
-                    note.date = dateCtrl.text.trim();
-                    note.title = titleCtrl.text.trim();
-                    note.summary = summaryCtrl.text.trim();
-                    note.homework = homeworkCtrl.text.trim();
-                  }
-                });
-                await SchoolData.saveData();
-                if (mounted) Navigator.pop(context);
-              }
-            },
-            child: const Text('حفظ'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ✅ التحديث الفوري للحضور مع الحفظ في سجل التاريخ اليومي
-  void _updateAttendanceForToday(Student student, String newStatus) {
-    setState(() {
-      student.status = newStatus;
-      String currentToday = todayStr();
-
-      DailyAttendanceRecord? record;
-      for (var d in widget.schoolClass.dailyRecords) {
-        if (d.date == currentToday) {
-          record = d;
-          break;
-        }
-      }
-
-      if (record == null) {
-        record = DailyAttendanceRecord(date: currentToday, studentStatuses: {});
-        widget.schoolClass.dailyRecords.add(record);
-      }
-      record.studentStatuses[student.regNumber] = newStatus;
-    });
-    SchoolData.saveData();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      duration: const Duration(milliseconds: 900),
-      content: Text('تم تسجيل ${student.firstName}: $newStatus'),
-    ));
-  }
-
-  void _markAllStudentsPresent() {
-    String currentToday = todayStr();
-    setState(() {
-      DailyAttendanceRecord? record;
-      for (var d in widget.schoolClass.dailyRecords) {
-        if (d.date == currentToday) {
-          record = d;
-          break;
-        }
-      }
-      if (record == null) {
-        record = DailyAttendanceRecord(date: currentToday, studentStatuses: {});
-        widget.schoolClass.dailyRecords.add(record);
-      }
-
-      for (var s in widget.schoolClass.students) {
-        s.status = 'حاضر';
-        record.studentStatuses[s.regNumber] = 'حاضر';
-      }
-    });
-    SchoolData.saveData();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم تسجيل جميع التلاميذ كـ (حاضرين) لهذا اليوم!')),
-    );
-  }
-
+  // كشف نقاط فردي رسمي
   Future<void> _exportStudentBulletinPdf(Student student, int rank) async {
     try {
       final pdf = pwWidgets.Document();
@@ -2346,6 +2158,54 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
     );
   }
 
+  void _updateAttendanceForToday(Student student, String newStatus) {
+    setState(() {
+      student.status = newStatus;
+      String currentToday = todayStr();
+
+      DailyAttendanceRecord? record;
+      for (var d in widget.schoolClass.dailyRecords) {
+        if (d.date == currentToday) {
+          record = d;
+          break;
+        }
+      }
+
+      if (record == null) {
+        record = DailyAttendanceRecord(date: currentToday, studentStatuses: {});
+        widget.schoolClass.dailyRecords.add(record);
+      }
+      record.studentStatuses[student.regNumber] = newStatus;
+    });
+    SchoolData.saveData();
+  }
+
+  void _markAllStudentsPresent() {
+    String currentToday = todayStr();
+    setState(() {
+      DailyAttendanceRecord? record;
+      for (var d in widget.schoolClass.dailyRecords) {
+        if (d.date == currentToday) {
+          record = d;
+          break;
+        }
+      }
+      if (record == null) {
+        record = DailyAttendanceRecord(date: currentToday, studentStatuses: {});
+        widget.schoolClass.dailyRecords.add(record);
+      }
+
+      for (var s in widget.schoolClass.students) {
+        s.status = 'حاضر';
+        record.studentStatuses[s.regNumber] = 'حاضر';
+      }
+    });
+    SchoolData.saveData();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم تسجيل جميع التلاميذ كـ (حاضرين) لهذا اليوم!')),
+    );
+  }
+
   Color _getStatusColor(String status) {
     switch (status) {
       case 'حاضر':
@@ -2353,7 +2213,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
       case 'غائب':
         return Colors.redAccent;
       case 'متأخر':
-        return Colors.amber.shade700;
+        return Colors.amber.shade800;
       case 'معفى':
         return Colors.blueGrey;
       default:
@@ -2363,10 +2223,24 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    widget.schoolClass.students
-        .sort((a, b) => compareArabicNames(a.lastName, b.lastName));
+    // تطبيق الترتيب المختار
+    List<Student> workingList = List.from(widget.schoolClass.students);
+    switch (_sortCriteria) {
+      case 'alphabetical':
+        workingList.sort((a, b) => compareArabicNames(a.lastName, b.lastName));
+        break;
+      case 'gradeDesc':
+        workingList.sort((a, b) => b.average.compareTo(a.average));
+        break;
+      case 'gradeAsc':
+        workingList.sort((a, b) => a.average.compareTo(b.average));
+        break;
+      case 'regNumber':
+        workingList.sort((a, b) => a.regNumber.compareTo(b.regNumber));
+        break;
+    }
 
-    final filteredStudents = widget.schoolClass.students.where((s) {
+    final filteredStudents = workingList.where((s) {
       if (_studentSearchQuery.isEmpty) return true;
       final q = _studentSearchQuery.toLowerCase();
       return s.lastName.toLowerCase().contains(q) ||
@@ -2388,9 +2262,19 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
     int countExcellent =
         widget.schoolClass.students.where((s) => s.average >= 16.0).length;
 
+    int totalPresentToday = widget.schoolClass.students.where((s) => s.status == 'حاضر').length;
+    int totalAbsentToday = widget.schoolClass.students.where((s) => s.status == 'غائب').length;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('قسم: ${widget.schoolClass.name}'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.print, color: Color(0xFFF59E0B)),
+            tooltip: 'طباعة سجل القسم الكامل PDF',
+            onPressed: _exportFullClassRegisterPdf,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
@@ -2407,136 +2291,285 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          // 1. تبويب التلاميذ، كشوف النقاط، وتسجيل الحضور المباشر
+          // 1. تبويب التلاميذ المطور (خالٍ من أي خطأ Overflow مع فرز فوري)
           Column(
             children: [
+              // شريط البحث وخيارات الترتيب الأبجدي / بالمعدل
               Padding(
-                padding: const EdgeInsets.all(10.0),
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'بحث بالاسم أو اللقب أو رقم التعريف...',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                  ),
-                  onChanged: (val) {
-                    setState(() {
-                      _studentSearchQuery = val;
-                    });
-                  },
+                padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'بحث بالاسم، اللقب، أو رقم التعريف...',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                        ),
+                        onChanged: (val) {
+                          setState(() {
+                            _studentSearchQuery = val;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // زر الترتيب
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade400),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _sortCriteria,
+                          icon: const Icon(Icons.sort, color: Color(0xFF0F172A)),
+                          items: const [
+                            DropdownMenuItem(
+                                value: 'alphabetical', child: Text('أبجدياً (أ-ي)')),
+                            DropdownMenuItem(
+                                value: 'gradeDesc', child: Text('الأعلى معدلاً')),
+                            DropdownMenuItem(
+                                value: 'gradeAsc', child: Text('الأدنى معدلاً')),
+                            DropdownMenuItem(
+                                value: 'regNumber', child: Text('رقم التعريف')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _sortCriteria = val;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+
+              // شريط ملخص حضور اليوم وسجل سريع
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Text('حضور اليوم: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        Text('$totalPresentToday حاضر 🟢', style: const TextStyle(color: Color(0xFF059669), fontWeight: FontWeight.bold, fontSize: 13)),
+                        const Text(' | '),
+                        Text('$totalAbsentToday غائب 🔴', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                    InkWell(
+                      onTap: _markAllStudentsPresent,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF059669),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text('تحضير الكل ✔', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // قائمة التلاميذ بتصميم بطاقات فسيحة تمنع الـ Overflow نهائياً
               Expanded(
                 child: filteredStudents.isEmpty
                     ? const Center(child: Text('لا يوجد تلاميذ مطابقون.'))
                     : ListView.builder(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         itemCount: filteredStudents.length,
                         itemBuilder: (context, index) {
                           final student = filteredStudents[index];
-                          List<Student> sorted =
+                          List<Student> rankSorted =
                               List.from(widget.schoolClass.students)
                                 ..sort((a, b) => b.average.compareTo(a.average));
-                          int rank = sorted.indexOf(student) + 1;
+                          int rank = rankSorted.indexOf(student) + 1;
 
                           return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: student.average >= 10.0
-                                    ? const Color(0xFF059669)
-                                    : Colors.redAccent,
-                                child: Text('$rank',
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold)),
+                            elevation: 2,
+                            margin: const EdgeInsets.only(bottom: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: student.status == 'غائب'
+                                    ? Colors.red.shade200
+                                    : Colors.grey.shade200,
+                                width: 1,
                               ),
-                              title: Row(
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                      '${student.lastName} ${student.firstName}',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16)),
-                                  const SizedBox(width: 8),
-                                  // زر تبديل حالة الحضور السريع الفوري
-                                  PopupMenuButton<String>(
-                                    tooltip: 'تسجيل الحضور/الغياب',
-                                    onSelected: (newStatus) =>
-                                        _updateAttendanceForToday(
-                                            student, newStatus),
-                                    itemBuilder: (context) => [
-                                      const PopupMenuItem(
-                                          value: 'حاضر',
-                                          child: Text('حاضر 🟢')),
-                                      const PopupMenuItem(
-                                          value: 'غائب',
-                                          child: Text('غائب 🔴')),
-                                      const PopupMenuItem(
-                                          value: 'متأخر',
-                                          child: Text('متأخر 🟡')),
-                                      const PopupMenuItem(
-                                          value: 'معفى',
-                                          child: Text('معفى ⚪')),
+                                  // السطر الأول: الرتبة، الاسم الكامل، شارة التفوق، وحالة الحضور
+                                  Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 14,
+                                        backgroundColor: student.average >= 10.0
+                                            ? const Color(0xFF059669)
+                                            : Colors.redAccent,
+                                        child: Text('$rank',
+                                            style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold)),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '${student.lastName} ${student.firstName}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16),
+                                        ),
+                                      ),
+                                      if (student.average >= 16.0)
+                                        const Icon(Icons.star,
+                                            color: Color(0xFFF59E0B), size: 18),
+                                      const SizedBox(width: 6),
+                                      // زر تبديل حالة الحضور السريع
+                                      PopupMenuButton<String>(
+                                        tooltip: 'تغيير حالة الحضور',
+                                        onSelected: (newStatus) =>
+                                            _updateAttendanceForToday(
+                                                student, newStatus),
+                                        itemBuilder: (context) => [
+                                          const PopupMenuItem(
+                                              value: 'حاضر', child: Text('حاضر 🟢')),
+                                          const PopupMenuItem(
+                                              value: 'غائب', child: Text('غائب 🔴')),
+                                          const PopupMenuItem(
+                                              value: 'متأخر', child: Text('متأخر 🟡')),
+                                          const PopupMenuItem(
+                                              value: 'معفى', child: Text('معفى ⚪')),
+                                        ],
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: _getStatusColor(student.status)
+                                                .withOpacity(0.15),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            border: Border.all(
+                                                color: _getStatusColor(
+                                                    student.status),
+                                                width: 1),
+                                          ),
+                                          child: Text(
+                                            student.status,
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: _getStatusColor(
+                                                    student.status)),
+                                          ),
+                                        ),
+                                      ),
                                     ],
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: _getStatusColor(student.status)
-                                            .withOpacity(0.15),
-                                        borderRadius:
-                                            BorderRadius.circular(8),
-                                        border: Border.all(
-                                            color: _getStatusColor(
-                                                student.status),
-                                            width: 1),
-                                      ),
-                                      child: Text(
-                                        student.status,
+                                  ),
+                                  const Divider(height: 16),
+
+                                  // السطر الثاني: تفاصيل العلامات والمعدل بوضوح
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'المعدل: ${student.average.toStringAsFixed(2)} / 20 (${student.appreciation})',
                                         style: TextStyle(
-                                            fontSize: 11,
                                             fontWeight: FontWeight.bold,
-                                            color: _getStatusColor(
-                                                student.status)),
+                                            color: student.average >= 10.0
+                                                ? const Color(0xFF0F172A)
+                                                : Colors.redAccent,
+                                            fontSize: 13),
                                       ),
-                                    ),
+                                      Text(
+                                        'رقم: ${student.regNumber}',
+                                        style: const TextStyle(
+                                            color: Colors.grey, fontSize: 12),
+                                      ),
+                                    ],
                                   ),
-                                  if (student.average >= 16.0) ...[
-                                    const Spacer(),
-                                    const Icon(Icons.star,
-                                        color: Color(0xFFF59E0B), size: 18),
-                                  ],
-                                ],
-                              ),
-                              subtitle: Text(
-                                  'المعدل: ${student.average.toStringAsFixed(2)}/20 (${student.appreciation}) | تقويم: ${student.continuousEval} | ف1: ${student.exam1} | اخت: ${student.test}'),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.picture_as_pdf,
-                                        color: Color(0xFFD97706)),
-                                    tooltip: 'كشف نقاط رسمي مع QR',
-                                    onPressed: () => _exportStudentBulletinPdf(
-                                        student, rank),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'تقويم: ${student.continuousEval} | ف1: ${student.exam1} | ف2: ${student.exam2 > 0 ? student.exam2 : '-'} | اختبار: ${student.test}',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.blueGrey.shade800),
                                   ),
-                                  IconButton(
-                                    icon: const Icon(
-                                        Icons.notifications_active,
-                                        color: Color(0xFF059669)),
-                                    tooltip: 'إشعار ولي الأمر',
-                                    onPressed: () =>
-                                        _sendGuardianNotification(student),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_note,
-                                        color: Colors.blueGrey),
-                                    tooltip: 'تعديل العلامات',
-                                    onPressed: () =>
-                                        _showEditStudentGradesDialog(student),
+                                  const SizedBox(height: 8),
+
+                                  // السطر الثالث: أزرار العمليات بدون أي تداخل
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      TextButton.icon(
+                                        style: TextButton.styleFrom(
+                                          foregroundColor:
+                                              const Color(0xFFD97706),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8),
+                                        ),
+                                        icon: const Icon(Icons.picture_as_pdf,
+                                            size: 18),
+                                        label: const Text('كشف نقاط',
+                                            style: TextStyle(fontSize: 12)),
+                                        onPressed: () =>
+                                            _exportStudentBulletinPdf(
+                                                student, rank),
+                                      ),
+                                      TextButton.icon(
+                                        style: TextButton.styleFrom(
+                                          foregroundColor:
+                                              const Color(0xFF059669),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8),
+                                        ),
+                                        icon: const Icon(
+                                            Icons.notifications_active,
+                                            size: 18),
+                                        label: const Text('إشعار الولي',
+                                            style: TextStyle(fontSize: 12)),
+                                        onPressed: () =>
+                                            _sendGuardianNotification(student),
+                                      ),
+                                      TextButton.icon(
+                                        style: TextButton.styleFrom(
+                                          foregroundColor:
+                                              const Color(0xFF0F172A),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8),
+                                        ),
+                                        icon: const Icon(Icons.edit_note,
+                                            size: 18),
+                                        label: const Text('العلامات',
+                                            style: TextStyle(fontSize: 12)),
+                                        onPressed: () =>
+                                            _showEditStudentGradesDialog(
+                                                student),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -2889,5 +2922,259 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
         label: const Text('إضافة تلميذ'),
       ),
     );
+  }
+
+  void _showAddNoteDialog({LessonNote? note}) {
+    final dateCtrl = TextEditingController(text: note?.date ?? todayStr());
+    final titleCtrl = TextEditingController(text: note?.title ?? '');
+    final summaryCtrl = TextEditingController(text: note?.summary ?? '');
+    final homeworkCtrl = TextEditingController(text: note?.homework ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+            note == null ? 'إضافة مذكرة درس جديد' : 'تعديل مذكرة الدرس'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: dateCtrl,
+                  decoration: const InputDecoration(labelText: 'التاريخ')),
+              TextField(
+                  controller: titleCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'عنوان الدرس والمحور')),
+              TextField(
+                  controller: summaryCtrl,
+                  maxLines: 3,
+                  decoration:
+                      const InputDecoration(labelText: 'خلاصة الدرس')),
+              TextField(
+                  controller: homeworkCtrl,
+                  decoration:
+                      const InputDecoration(labelText: 'الواجب المنزلي')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء')),
+          ElevatedButton(
+            onPressed: () async {
+              if (titleCtrl.text.trim().isNotEmpty) {
+                setState(() {
+                  if (note == null) {
+                    widget.schoolClass.lessonNotes.add(LessonNote(
+                      date: dateCtrl.text.trim(),
+                      title: titleCtrl.text.trim(),
+                      summary: summaryCtrl.text.trim(),
+                      homework: homeworkCtrl.text.trim(),
+                    ));
+                  } else {
+                    note.date = dateCtrl.text.trim();
+                    note.title = titleCtrl.text.trim();
+                    note.summary = summaryCtrl.text.trim();
+                    note.homework = homeworkCtrl.text.trim();
+                  }
+                });
+                await SchoolData.saveData();
+                if (mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _importStudentsFromExcel() async {
+    try {
+      List<File> excelFiles = [];
+      List<Directory> searchDirs = [];
+
+      try {
+        final docDir = await getApplicationDocumentsDirectory();
+        searchDirs.add(docDir);
+      } catch (_) {}
+
+      for (var path in [
+        '/storage/emulated/0/Download',
+        '/storage/emulated/0/Documents'
+      ]) {
+        try {
+          final dir = Directory(path);
+          if (dir.existsSync()) {
+            searchDirs.add(dir);
+          }
+        } catch (_) {}
+      }
+
+      for (var dir in searchDirs) {
+        try {
+          final entities = dir.listSync();
+          for (var entity in entities) {
+            if (entity is File) {
+              final pathLower = entity.path.toLowerCase();
+              if (pathLower.endsWith('.xlsx') || pathLower.endsWith('.xls')) {
+                excelFiles.add(entity);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: const [
+              Icon(Icons.table_chart, color: Color(0xFF059669)),
+              SizedBox(width: 8),
+              Text('اختر ملف الإكسل (Excel)',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 320,
+            child: excelFiles.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.folder_open,
+                              size: 54, color: Colors.grey),
+                          SizedBox(height: 12),
+                          Text(
+                            'لم يتم العثور على ملفات .xlsx في مجلد Downloads.\nيرجى وضع ملف القائمة في مجلد التنزيلات بهاتفك أو مجلد المستندات.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: Colors.grey, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: excelFiles.length,
+                    itemBuilder: (ctx, i) {
+                      final f = excelFiles[i];
+                      final fileName = f.path.split('/').last;
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ListTile(
+                          leading: const Icon(Icons.description,
+                              color: Color(0xFF059669)),
+                          title: Text(fileName,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 13)),
+                          subtitle: Text(f.path,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 10, color: Colors.grey)),
+                          onTap: () async {
+                            Navigator.pop(ctx);
+                            Uint8List bytes = await f.readAsBytes();
+                            _processExcelBytes(bytes);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('خطأ أثناء قراءة الملفات: $e')));
+      }
+    }
+  }
+
+  void _processExcelBytes(Uint8List bytes) async {
+    try {
+      var excel = excelPkg.Excel.decodeBytes(bytes);
+      int addedCount = 0;
+
+      for (var table in excel.tables.keys) {
+        var rows = excel.tables[table]!.rows;
+        if (rows.isEmpty) continue;
+
+        int startIndex = 0;
+        if (rows.isNotEmpty) {
+          String firstCell = extractCellString(rows[0][0]);
+          if (firstCell.contains('اللقب') ||
+              firstCell.contains('Nom') ||
+              firstCell.contains('الرقم')) {
+            startIndex = 1;
+          }
+        }
+
+        for (int i = startIndex; i < rows.length; i++) {
+          var row = rows[i];
+          if (row.isEmpty) continue;
+
+          String col0 = row.isNotEmpty ? extractCellString(row[0]) : '';
+          String col1 = row.length > 1 ? extractCellString(row[1]) : '';
+          String col2 = row.length > 2 ? extractCellString(row[2]) : '';
+          String col3 =
+              row.length > 3 ? extractCellString(row[3]) : '01/01/2007';
+
+          String lastName = col0;
+          String firstName = col1;
+          String regNum = col2;
+
+          if (int.tryParse(col0) != null && row.length >= 4) {
+            regNum = col1;
+            lastName = col2;
+            firstName = col3;
+          }
+
+          if (lastName.isNotEmpty || firstName.isNotEmpty) {
+            widget.schoolClass.students.add(Student(
+              lastName: lastName,
+              firstName: firstName,
+              regNumber: regNum.isEmpty
+                  ? '2026${widget.schoolClass.students.length + addedCount + 1}'
+                  : regNum,
+              birthDate: col3.isEmpty ? '01/01/2007' : col3,
+              birthPlace: 'الجلفة',
+            ));
+            addedCount++;
+          }
+        }
+      }
+
+      await SchoolData.saveData();
+      setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('تم استيراد $addedCount تلميذاً بنجاح من الهاتف!')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('خطأ أثناء قراءة ملف الإكسل: $e')));
+      }
+    }
   }
 }
