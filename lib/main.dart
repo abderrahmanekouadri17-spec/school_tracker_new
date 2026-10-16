@@ -33,7 +33,8 @@ String currentTimeStr() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SchoolData.loadData();
-  runApp(const EducationalRegisterApp());
+  final initialDarkMode = await SchoolData.loadThemeMode();
+  runApp(EducationalRegisterApp(initialDarkMode: initialDarkMode));
 }
 
 // ============================================================================
@@ -401,18 +402,31 @@ class Institution {
 }
 
 // ============================================================================
-// 2. إدارة التخزين وقراءة البيانات (STORAGE & ENGINE)
+// 2. إدارة التخزين وحفظ النمط الدائم (STORAGE & PERSISTENCE)
 // ============================================================================
 
 class SchoolData {
   static List<Institution> institutions = [];
   static String appPin = "1234";
+  static const String _themePrefKey = "app_persisted_dark_mode";
 
   static Future<void> saveData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
         'institutionsData', jsonEncode(institutions.map((i) => i.toJson()).toList()));
     await prefs.setString('appPin', appPin);
+  }
+
+  // ✅ حفظ الوضع الليلي في الذاكرة الدائمة
+  static Future<void> saveThemeMode(bool isDark) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_themePrefKey, isDark);
+  }
+
+  // ✅ استرجاع الوضع الليلي الدائم عند فتح التطبيق
+  static Future<bool> loadThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_themePrefKey) ?? false;
   }
 
   static Future<void> loadData() async {
@@ -550,28 +564,32 @@ String extractCellString(dynamic cell) {
 // ============================================================================
 
 class EducationalRegisterApp extends StatefulWidget {
-  const EducationalRegisterApp({super.key});
+  final bool initialDarkMode;
+  const EducationalRegisterApp({super.key, this.initialDarkMode = false});
 
   @override
   State<EducationalRegisterApp> createState() => _EducationalRegisterAppState();
 }
 
 class _EducationalRegisterAppState extends State<EducationalRegisterApp> {
-  bool _isDarkMode = false;
+  late bool _isDarkMode;
   bool _isLocked = true;
 
   @override
   void initState() {
     super.initState();
+    _isDarkMode = widget.initialDarkMode;
     SchoolData.loadData().then((_) {
       if (mounted) setState(() {});
     });
   }
 
+  // ✅ تبديل النمط وحفظه فوراً في الذاكرة الدائمة
   void _toggleTheme() {
     setState(() {
       _isDarkMode = !_isDarkMode;
     });
+    SchoolData.saveThemeMode(_isDarkMode);
   }
 
   void _unlockApp() {
@@ -601,6 +619,7 @@ class _EducationalRegisterAppState extends State<EducationalRegisterApp> {
         useMaterial3: true,
         brightness: Brightness.light,
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+        cardColor: Colors.white,
         fontFamily: 'Cairo',
         colorScheme: const ColorScheme.light(
           primary: deepNavy,
@@ -617,6 +636,7 @@ class _EducationalRegisterAppState extends State<EducationalRegisterApp> {
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF0B132B),
+        cardColor: const Color(0xFF1E293B),
         fontFamily: 'Cairo',
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF3B82F6),
@@ -1635,7 +1655,8 @@ class _ClassesScreenState extends State<ClassesScreen> {
                                     builder: (context) => ClassDashboardScreen(
                                         institution: widget.institution,
                                         teacher: widget.teacher,
-                                        schoolClass: schoolClass))).then(
+                                        schoolClass: schoolClass,
+                                        isDarkMode: (Theme.of(context).brightness == Brightness.dark)))).then(
                                 (_) => setState(() {}));
                           },
                         ),
@@ -1664,12 +1685,14 @@ class ClassDashboardScreen extends StatefulWidget {
   final Institution institution;
   final Teacher teacher;
   final SchoolClass schoolClass;
+  final bool isDarkMode;
 
   const ClassDashboardScreen({
     super.key,
     required this.institution,
     required this.teacher,
     required this.schoolClass,
+    this.isDarkMode = false,
   });
 
   @override
@@ -1688,6 +1711,326 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
     _tabController = TabController(length: 5, vsync: this);
   }
 
+  // ✅ 1. نافذة تعديل معلومات التلميذ الشاملة (طلب المستخدم)
+  void _showEditStudentInfoDialog(Student student) {
+    final firstCtrl = TextEditingController(text: student.firstName);
+    final lastCtrl = TextEditingController(text: student.lastName);
+    final regCtrl = TextEditingController(text: student.regNumber);
+    final birthDateCtrl = TextEditingController(text: student.birthDate);
+    final birthPlaceCtrl = TextEditingController(text: student.birthPlace);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: Row(
+          children: const [
+            Icon(Icons.person_pin_rounded, color: Color(0xFF059669), size: 28),
+            SizedBox(width: 8),
+            Text('تعديل معلومات التلميذ',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: lastCtrl,
+                decoration: const InputDecoration(labelText: 'اللقب', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: firstCtrl,
+                decoration: const InputDecoration(labelText: 'الاسم', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: regCtrl,
+                decoration: const InputDecoration(labelText: 'رقم التعريف المدرسي', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: birthDateCtrl,
+                decoration: const InputDecoration(labelText: 'تاريخ الازدياد (DD/MM/YYYY)', prefixIcon: Icon(Icons.cake), border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: birthPlaceCtrl,
+                decoration: const InputDecoration(labelText: 'مكان الازدياد', prefixIcon: Icon(Icons.location_on), border: OutlineInputBorder()),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF059669),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.save_rounded),
+            label: const Text('حفظ التعديلات'),
+            onPressed: () async {
+              if (firstCtrl.text.trim().isNotEmpty && lastCtrl.text.trim().isNotEmpty) {
+                setState(() {
+                  student.firstName = firstCtrl.text.trim();
+                  student.lastName = lastCtrl.text.trim();
+                  student.regNumber = regCtrl.text.trim();
+                  student.birthDate = birthDateCtrl.text.trim();
+                  student.birthPlace = birthPlaceCtrl.text.trim();
+                });
+                await SchoolData.saveData();
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('تم تحديث بيانات التلميذ: ${student.lastName} ${student.firstName} بنجاح ✅')),
+                  );
+                }
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ 2. النافذة المنبثقة التتابعية لتسجيل الحضور (طالب بطالب مع التوقيت)
+  void _showSequentialAttendanceDialog() {
+    final list = widget.schoolClass.students;
+    if (list.isEmpty) return;
+
+    int activeIndex = 0;
+    String liveTime = currentTimeStr();
+    final reasonCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final student = list[activeIndex];
+
+          void applyStatusAndGoNext(String status) {
+            String? timeToSave;
+            if (status != 'حاضر' && status != 'معفى') {
+              timeToSave = liveTime.trim().isEmpty ? currentTimeStr() : liveTime.trim();
+            }
+            _applyAttendanceStatus(
+              student,
+              status,
+              timeToSave,
+              reasonCtrl.text.trim().isEmpty ? null : reasonCtrl.text.trim(),
+            );
+
+            if (activeIndex < list.length - 1) {
+              setModalState(() {
+                activeIndex++;
+                liveTime = currentTimeStr();
+                reasonCtrl.clear();
+              });
+            } else {
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('🎉 اكتمل تسجيل حضور وغياب كافة تلاميذ القسم بنجاح!')),
+              );
+            }
+          }
+
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('التسجيل التتابعي (طالب بطالب)',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                    Text('تلميذ ${activeIndex + 1} من ${list.length} • ${widget.schoolClass.name}',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+              ],
+            ),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // شريط التقدم
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: LinearProgressIndicator(
+                        value: (activeIndex + 1) / list.length,
+                        minHeight: 7,
+                        backgroundColor: Colors.grey.shade300,
+                        color: const Color(0xFF059669),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
+                    // بطاقة التلميذ الكبيرة بوضوح تام
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: Colors.grey.shade400.withOpacity(0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 28,
+                            backgroundColor: const Color(0xFF059669),
+                            child: Text(
+                              '${activeIndex + 1}',
+                              style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${student.lastName} ${student.firstName}',
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text('رقم التعريف: ${student.regNumber} | المعدل: ${student.average.toStringAsFixed(2)}',
+                                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // توقيت الحالة والملاحظة
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: liveTime,
+                            decoration: const InputDecoration(
+                              labelText: 'توقيت الحالة (للتأخر والهروب)',
+                              prefixIcon: Icon(Icons.access_time),
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (v) => liveTime = v,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: reasonCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'السبب أو الملاحظة (اختياري)',
+                              prefixIcon: Icon(Icons.notes),
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child: Text('اختر الحالة ليتم حفظها والانتقال التلقائي للتلميذ الموالي:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // أزرار الحالات الخمسة الكبيرة
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF059669),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          ),
+                          icon: const Icon(Icons.check_circle),
+                          label: const Text('حاضر 🟢'),
+                          onPressed: () => applyStatusAndGoNext('حاضر'),
+                        ),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE11D48),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          ),
+                          icon: const Icon(Icons.cancel),
+                          label: const Text('غائب 🔴'),
+                          onPressed: () => applyStatusAndGoNext('غائب'),
+                        ),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFD97706),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          ),
+                          icon: const Icon(Icons.watch_later_outlined),
+                          label: const Text('متأخر 🟡'),
+                          onPressed: () => applyStatusAndGoNext('متأخر'),
+                        ),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFB91C1C),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          ),
+                          icon: const Icon(Icons.directions_run),
+                          label: const Text('هروب 🚨'),
+                          onPressed: () => applyStatusAndGoNext('هروب'),
+                        ),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2563EB),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          ),
+                          icon: const Icon(Icons.assignment_outlined),
+                          label: const Text('خروج بإذن 📜'),
+                          onPressed: () => applyStatusAndGoNext('خروج بإذن'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              if (activeIndex > 0)
+                TextButton(
+                  onPressed: () => setModalState(() => activeIndex--),
+                  child: const Text('التلميذ السابق'),
+                ),
+              TextButton(
+                onPressed: () {
+                  if (activeIndex < list.length - 1) {
+                    setModalState(() => activeIndex++);
+                  } else {
+                    Navigator.pop(ctx);
+                  }
+                },
+                child: const Text('تخطي دون تسجيل'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _showAddStudentDialog() {
     final firstCtrl = TextEditingController();
     final lastCtrl = TextEditingController();
@@ -1703,35 +2046,19 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                  controller: lastCtrl,
-                  decoration: const InputDecoration(labelText: 'اللقب')),
-              TextField(
-                  controller: firstCtrl,
-                  decoration: const InputDecoration(labelText: 'الاسم')),
-              TextField(
-                  controller: regCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'رقم التعريف المدرسي')),
-              TextField(
-                  controller: birthDateCtrl,
-                  decoration:
-                      const InputDecoration(labelText: 'تاريخ الازدياد')),
-              TextField(
-                  controller: birthPlaceCtrl,
-                  decoration:
-                      const InputDecoration(labelText: 'مكان الازدياد')),
+              TextField(controller: lastCtrl, decoration: const InputDecoration(labelText: 'اللقب')),
+              TextField(controller: firstCtrl, decoration: const InputDecoration(labelText: 'الاسم')),
+              TextField(controller: regCtrl, decoration: const InputDecoration(labelText: 'رقم التعريف المدرسي')),
+              TextField(controller: birthDateCtrl, decoration: const InputDecoration(labelText: 'تاريخ الازدياد')),
+              TextField(controller: birthPlaceCtrl, decoration: const InputDecoration(labelText: 'مكان الازدياد')),
             ],
           ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           ElevatedButton(
             onPressed: () async {
-              if (firstCtrl.text.trim().isNotEmpty &&
-                  lastCtrl.text.trim().isNotEmpty) {
+              if (firstCtrl.text.trim().isNotEmpty && lastCtrl.text.trim().isNotEmpty) {
                 setState(() {
                   widget.schoolClass.students.add(Student(
                     firstName: firstCtrl.text.trim(),
@@ -1754,7 +2081,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
     );
   }
 
-  // تصدير سجل القسم المجمع بالكامل (Official Class Register PDF)
+  // تصدير سجل القسم المجمع بالكامل
   Future<void> _exportFullClassRegisterPdf() async {
     try {
       final pdf = pwWidgets.Document();
@@ -1768,14 +2095,12 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
         pwWidgets.MultiPage(
           pageFormat: pw.PdfPageFormat.a4,
           textDirection: pwWidgets.TextDirection.rtl,
-          theme: pwWidgets.ThemeData.withFont(
-              base: arabicFont, bold: arabicBold),
+          theme: pwWidgets.ThemeData.withFont(base: arabicFont, bold: arabicBold),
           build: (pwWidgets.Context context) {
             return [
               pwWidgets.Center(
                 child: pwWidgets.Text('الجمهورية الجزائرية الديمقراطية الشعبية',
-                    style: pwWidgets.TextStyle(
-                        fontSize: 14, fontWeight: pwWidgets.FontWeight.bold)),
+                    style: pwWidgets.TextStyle(fontSize: 14, fontWeight: pwWidgets.FontWeight.bold)),
               ),
               pwWidgets.Center(
                 child: pwWidgets.Text('وزارة التربية الوطنية - سجل نتائج ومواظبة القسم الشامل',
@@ -1894,34 +2219,27 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
         pwWidgets.Page(
           pageFormat: pw.PdfPageFormat.a4,
           textDirection: pwWidgets.TextDirection.rtl,
-          theme: pwWidgets.ThemeData.withFont(
-              base: arabicFont, bold: arabicBold),
+          theme: pwWidgets.ThemeData.withFont(base: arabicFont, bold: arabicBold),
           build: (pwWidgets.Context context) {
             return pwWidgets.Container(
               padding: const pwWidgets.EdgeInsets.all(24),
               decoration: pwWidgets.BoxDecoration(
-                  border: pwWidgets.Border.all(
-                      color: pw.PdfColors.black, width: 2)),
+                  border: pwWidgets.Border.all(color: pw.PdfColors.black, width: 2)),
               child: pwWidgets.Column(
                 crossAxisAlignment: pwWidgets.CrossAxisAlignment.stretch,
                 children: [
                   pwWidgets.Center(
-                    child: pwWidgets.Text(
-                        'الجمهورية الجزائرية الديمقراطية الشعبية',
-                        style: pwWidgets.TextStyle(
-                            fontSize: 14,
-                            fontWeight: pwWidgets.FontWeight.bold)),
+                    child: pwWidgets.Text('الجمهورية الجزائرية الديمقراطية الشعبية',
+                        style: pwWidgets.TextStyle(fontSize: 14, fontWeight: pwWidgets.FontWeight.bold)),
                   ),
                   pwWidgets.Center(
-                    child: pwWidgets.Text(
-                        'وزارة التربية الوطنية - السجل البيداغوجي الشامل',
+                    child: pwWidgets.Text('وزارة التربية الوطنية - السجل البيداغوجي الشامل',
                         style: const pwWidgets.TextStyle(fontSize: 12)),
                   ),
                   pwWidgets.Divider(thickness: 1.5),
                   pwWidgets.SizedBox(height: 8),
                   pwWidgets.Row(
-                    mainAxisAlignment:
-                        pwWidgets.MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: pwWidgets.MainAxisAlignment.spaceBetween,
                     children: [
                       pwWidgets.Text('المؤسسة: ${widget.institution.name}'),
                       pwWidgets.Text('تاريخ الكشف: ${todayStr()}'),
@@ -1931,17 +2249,12 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                   pwWidgets.Container(
                     padding: const pwWidgets.EdgeInsets.all(10),
                     decoration: pwWidgets.BoxDecoration(
-                        border:
-                            pwWidgets.Border.all(color: pw.PdfColors.grey400)),
+                        border: pwWidgets.Border.all(color: pw.PdfColors.grey400)),
                     child: pwWidgets.Row(
-                      mainAxisAlignment:
-                          pwWidgets.MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: pwWidgets.MainAxisAlignment.spaceBetween,
                       children: [
-                        pwWidgets.Text(
-                            'التلميذ: ${student.lastName} ${student.firstName}',
-                            style: pwWidgets.TextStyle(
-                                fontWeight: pwWidgets.FontWeight.bold,
-                                fontSize: 13)),
+                        pwWidgets.Text('التلميذ: ${student.lastName} ${student.firstName}',
+                            style: pwWidgets.TextStyle(fontWeight: pwWidgets.FontWeight.bold, fontSize: 13)),
                         pwWidgets.Text('رقم التعريف: ${student.regNumber}'),
                         pwWidgets.Text('القسم: ${widget.schoolClass.name}'),
                       ],
@@ -1949,95 +2262,39 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                   ),
                   pwWidgets.SizedBox(height: 16),
                   pwWidgets.Table(
-                    border: pwWidgets.TableBorder.all(
-                        color: pw.PdfColors.black, width: 1),
+                    border: pwWidgets.TableBorder.all(color: pw.PdfColors.black, width: 1),
                     children: [
                       pwWidgets.TableRow(
-                        decoration: const pwWidgets.BoxDecoration(
-                            color: pw.PdfColors.grey300),
+                        decoration: const pwWidgets.BoxDecoration(color: pw.PdfColors.grey300),
                         children: [
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(6),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text('المادة'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(6),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text('التقويم'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(6),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text('الفرض 1'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(6),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text('الفرض 2'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(6),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text('الاختبار (×2)'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(6),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text('المعدل'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(6),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text('الرتبة'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(6), child: pwWidgets.Center(child: pwWidgets.Text('المادة'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(6), child: pwWidgets.Center(child: pwWidgets.Text('التقويم'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(6), child: pwWidgets.Center(child: pwWidgets.Text('الفرض 1'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(6), child: pwWidgets.Center(child: pwWidgets.Text('الفرض 2'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(6), child: pwWidgets.Center(child: pwWidgets.Text('الاختبار (×2)'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(6), child: pwWidgets.Center(child: pwWidgets.Text('المعدل'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(6), child: pwWidgets.Center(child: pwWidgets.Text('الرتبة'))),
                         ],
                       ),
                       pwWidgets.TableRow(
                         children: [
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(8),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text(
-                                      widget.teacher.subject))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(8),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text(
-                                      '${student.continuousEval}'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(8),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text('${student.exam1}'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(8),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text(student.exam2 > 0
-                                      ? '${student.exam2}'
-                                      : '-'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(8),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text('${student.test}'))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(8),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text(
-                                      student.average.toStringAsFixed(2),
-                                      style: pwWidgets.TextStyle(
-                                          fontWeight:
-                                              pwWidgets.FontWeight.bold)))),
-                          pwWidgets.Padding(
-                              padding: const pwWidgets.EdgeInsets.all(8),
-                              child: pwWidgets.Center(
-                                  child: pwWidgets.Text(
-                                      '$rank / ${widget.schoolClass.students.length}'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(8), child: pwWidgets.Center(child: pwWidgets.Text(widget.teacher.subject))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(8), child: pwWidgets.Center(child: pwWidgets.Text('${student.continuousEval}'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(8), child: pwWidgets.Center(child: pwWidgets.Text('${student.exam1}'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(8), child: pwWidgets.Center(child: pwWidgets.Text(student.exam2 > 0 ? '${student.exam2}' : '-'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(8), child: pwWidgets.Center(child: pwWidgets.Text('${student.test}'))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(8), child: pwWidgets.Center(child: pwWidgets.Text(student.average.toStringAsFixed(2), style: pwWidgets.TextStyle(fontWeight: pwWidgets.FontWeight.bold)))),
+                          pwWidgets.Padding(padding: const pwWidgets.EdgeInsets.all(8), child: pwWidgets.Center(child: pwWidgets.Text('$rank / ${widget.schoolClass.students.length}'))),
                         ],
                       ),
                     ],
                   ),
                   pwWidgets.SizedBox(height: 16),
-                  pwWidgets.Text(
-                      'التقدير البيداغوجي: ${student.appreciation}  |  قرار مجلس الأقسام: ${student.councilDecision}',
-                      style: pwWidgets.TextStyle(
-                          fontWeight: pwWidgets.FontWeight.bold)),
+                  pwWidgets.Text('التقدير البيداغوجي: ${student.appreciation}  |  قرار مجلس الأقسام: ${student.councilDecision}',
+                      style: pwWidgets.TextStyle(fontWeight: pwWidgets.FontWeight.bold)),
                   pwWidgets.Spacer(),
                   pwWidgets.Row(
-                    mainAxisAlignment:
-                        pwWidgets.MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: pwWidgets.MainAxisAlignment.spaceBetween,
                     children: [
                       pwWidgets.BarcodeWidget(
                         barcode: pwWidgets.Barcode.qrCode(),
@@ -2050,18 +2307,14 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                         height: 85,
                         decoration: pwWidgets.BoxDecoration(
                           shape: pwWidgets.BoxShape.circle,
-                          border: pwWidgets.Border.all(
-                              color: pw.PdfColors.blue900, width: 2),
+                          border: pwWidgets.Border.all(color: pw.PdfColors.blue900, width: 2),
                         ),
                         child: pwWidgets.Center(
-                          child: pwWidgets.Text(
-                              'المطابقة الرسمية\nختم الإدارة\n★ 2026 ★',
-                              textAlign: pwWidgets.TextAlign.center,
-                              style: const pwWidgets.TextStyle(fontSize: 8)),
+                          child: pwWidgets.Text('المطابقة الرسمية\nختم الإدارة\n★ 2026 ★',
+                              textAlign: pwWidgets.TextAlign.center, style: const pwWidgets.TextStyle(fontSize: 8)),
                         ),
                       ),
-                      pwWidgets.Text(
-                          'توقيع الأستاذ(ة): ${widget.teacher.name}'),
+                      pwWidgets.Text('توقيع الأستاذ(ة): ${widget.teacher.name}'),
                     ],
                   ),
                 ],
@@ -2077,13 +2330,11 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('خطأ أثناء إنشاء PDF: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ أثناء إنشاء PDF: $e')));
       }
     }
   }
 
-  // نافذة الإشعار المتقدمة مع رصد التوقيت والهروب والخروج بإذن
   void _sendGuardianNotification(Student student) {
     String attendanceNotice = '';
     if (student.status == 'هروب') {
@@ -2131,28 +2382,24 @@ $attendanceNotice
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(12)),
-              child: Text(msg, style: const TextStyle(fontSize: 12)),
+              decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
+              child: Text(msg, style: const TextStyle(fontSize: 12, color: Colors.black87)),
             ),
           ],
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إغلاق')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-                backgroundColor: student.status == 'هروب' ? Colors.red : const Color(0xFF059669),
-                foregroundColor: Colors.white),
+              backgroundColor: student.status == 'هروب' ? Colors.red : const Color(0xFF059669),
+              foregroundColor: Colors.white,
+            ),
             icon: const Icon(Icons.copy),
             label: const Text('نسخ الرسالة'),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: msg));
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('تم نسخ نص الإشعار بنجاح!')));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ نص الإشعار بنجاح!')));
             },
           ),
         ],
@@ -2161,59 +2408,46 @@ $attendanceNotice
   }
 
   void _showEditStudentGradesDialog(Student student) {
-    final continuousCtrl =
-        TextEditingController(text: student.continuousEval.toString());
-    final exam1Ctrl =
-        TextEditingController(text: student.exam1.toString());
-    final exam2Ctrl =
-        TextEditingController(text: student.exam2.toString());
-    final testCtrl =
-        TextEditingController(text: student.test.toString());
+    final continuousCtrl = TextEditingController(text: student.continuousEval.toString());
+    final exam1Ctrl = TextEditingController(text: student.exam1.toString());
+    final exam2Ctrl = TextEditingController(text: student.exam2.toString());
+    final testCtrl = TextEditingController(text: student.test.toString());
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-            'علامات التلميذ: ${student.lastName} ${student.firstName}'),
+        title: Text('علامات التلميذ: ${student.lastName} ${student.firstName}'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                  controller: continuousCtrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                      labelText: 'التقويم المستمر والمشاركة')),
+                controller: continuousCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'التقويم المستمر والمشاركة'),
+              ),
               TextField(
-                  controller: exam1Ctrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration:
-                      const InputDecoration(labelText: 'الفرض 1')),
+                controller: exam1Ctrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'الفرض 1'),
+              ),
               TextField(
-                  controller: exam2Ctrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                      labelText: 'الفرض 2 (أدخل 0 إن كان غير مبرمج)')),
+                controller: exam2Ctrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'الفرض 2 (أدخل 0 إن كان غير مبرمج)'),
+              ),
               TextField(
-                  controller: testCtrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                      labelText: 'الاختبار الفصلي')),
+                controller: testCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'الاختبار الفصلي'),
+              ),
             ],
           ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F172A),
-                foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
             onPressed: () async {
               double? c = parseGrade(continuousCtrl.text);
               double? e1 = parseGrade(exam1Ctrl.text);
@@ -2230,8 +2464,7 @@ $attendanceNotice
                 await SchoolData.saveData();
                 if (mounted) {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('تم تحديث العلامات بنجاح!')));
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث العلامات بنجاح!')));
                 }
               }
             },
@@ -2242,7 +2475,6 @@ $attendanceNotice
     );
   }
 
-  // ✅ نافذة تحديد الوقت والسبب للحالات الخاصة (تأخر، هروب، خروج بإذن)
   void _showAttendanceActionDialog(Student student, String targetStatus) {
     if (targetStatus == 'حاضر' || targetStatus == 'غائب' || targetStatus == 'معفى') {
       _applyAttendanceStatus(student, targetStatus, null, null);
@@ -2279,18 +2511,12 @@ $attendanceNotice
           children: [
             TextField(
               controller: timeCtrl,
-              decoration: const InputDecoration(
-                labelText: 'توقيت التسجيل (HH:mm)',
-                prefixIcon: Icon(Icons.access_time),
-              ),
+              decoration: const InputDecoration(labelText: 'توقيت التسجيل (HH:mm)', prefixIcon: Icon(Icons.access_time)),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: reasonCtrl,
-              decoration: InputDecoration(
-                labelText: labelField,
-                prefixIcon: const Icon(Icons.notes),
-              ),
+              decoration: InputDecoration(labelText: labelField, prefixIcon: const Icon(Icons.notes)),
             ),
           ],
         ),
@@ -2317,8 +2543,7 @@ $attendanceNotice
     );
   }
 
-  void _applyAttendanceStatus(
-      Student student, String newStatus, String? time, String? reason) {
+  void _applyAttendanceStatus(Student student, String newStatus, String? time, String? reason) {
     setState(() {
       student.status = newStatus;
       student.statusTime = time;
@@ -2344,10 +2569,6 @@ $attendanceNotice
       );
     });
     SchoolData.saveData();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      duration: const Duration(seconds: 1),
-      content: Text('تم تسجيل ${student.lastName}: $newStatus ${time != null ? "($time)" : ""}'),
-    ));
   }
 
   void _markAllStudentsPresent() {
@@ -2378,22 +2599,77 @@ $attendanceNotice
     );
   }
 
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'حاضر':
-        return const Color(0xFF059669);
-      case 'غائب':
-        return Colors.redAccent;
-      case 'متأخر':
-        return Colors.amber.shade800;
-      case 'هروب':
-        return const Color(0xFFB91C1C); // أحمر قاني تحذيري
-      case 'خروج بإذن':
-        return const Color(0xFF2563EB); // أزرق رسمي
-      case 'معفى':
-        return Colors.blueGrey;
-      default:
-        return Colors.grey;
+  // ✅ 3. الألوان المتناسقة ذات التباين العالي (High Contrast Badges)
+  // يضمن وضوح وقراءة النص بامتياز تحت اللون في كلا الوضعين
+  Color _getStatusBgColor(String status, bool isDark) {
+    if (isDark) {
+      switch (status) {
+        case 'حاضر':
+          return const Color(0xFF064E3B); // خلفية خضراء ليلية
+        case 'غائب':
+          return const Color(0xFF881337); // خلفية حمراء ليلية
+        case 'متأخر':
+          return const Color(0xFF78350F); // خلفية كهرمانية ليلية
+        case 'هروب':
+          return const Color(0xFF4C1D95); // خلفية بنفسجية ليلية
+        case 'خروج بإذن':
+          return const Color(0xFF0C4A6E); // خلفية سماوية ليلية
+        case 'معفى':
+        default:
+          return const Color(0xFF334155);
+      }
+    } else {
+      switch (status) {
+        case 'حاضر':
+          return const Color(0xFFD1FAE5); // فاتح ناصع
+        case 'غائب':
+          return const Color(0xFFFFE4E6);
+        case 'متأخر':
+          return const Color(0xFFFEF3C7);
+        case 'هروب':
+          return const Color(0xFFF3E8FF);
+        case 'خروج بإذن':
+          return const Color(0xFFE0F2FE);
+        case 'معفى':
+        default:
+          return const Color(0xFFF1F5F9);
+      }
+    }
+  }
+
+  Color _getStatusTextColor(String status, bool isDark) {
+    if (isDark) {
+      switch (status) {
+        case 'حاضر':
+          return const Color(0xFF6EE7B7); // نص أخضر ناصع مقروء
+        case 'غائب':
+          return const Color(0xFFFDA4AF); // نص وردي ساطع
+        case 'متأخر':
+          return const Color(0xFFFCD34D); // نص أصفر ذهبي واضح
+        case 'هروب':
+          return const Color(0xFFD8B4FE); // نص بنفسجي ساطع
+        case 'خروج بإذن':
+          return const Color(0xFF7DD3FC); // نص سماوي ساطع
+        case 'معفى':
+        default:
+          return const Color(0xFFCBD5E1);
+      }
+    } else {
+      switch (status) {
+        case 'حاضر':
+          return const Color(0xFF065F46); // نص داكن مقروء
+        case 'غائب':
+          return const Color(0xFF9F1239);
+        case 'متأخر':
+          return const Color(0xFF92400E);
+        case 'هروب':
+          return const Color(0xFF5B21B6);
+        case 'خروج بإذن':
+          return const Color(0xFF075985);
+        case 'معفى':
+        default:
+          return const Color(0xFF334155);
+      }
     }
   }
 
@@ -2416,6 +2692,8 @@ $attendanceNotice
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     // تطبيق الترتيب المختار
     List<Student> workingList = List.from(widget.schoolClass.students);
     switch (_sortCriteria) {
@@ -2441,19 +2719,11 @@ $attendanceNotice
           s.regNumber.contains(q);
     }).toList();
 
-    int countWeak =
-        widget.schoolClass.students.where((s) => s.average < 10.0).length;
-    int countAverage = widget.schoolClass.students
-        .where((s) => s.average >= 10.0 && s.average < 12.0)
-        .length;
-    int countGood = widget.schoolClass.students
-        .where((s) => s.average >= 12.0 && s.average < 14.0)
-        .length;
-    int countVeryGood = widget.schoolClass.students
-        .where((s) => s.average >= 14.0 && s.average < 16.0)
-        .length;
-    int countExcellent =
-        widget.schoolClass.students.where((s) => s.average >= 16.0).length;
+    int countWeak = widget.schoolClass.students.where((s) => s.average < 10.0).length;
+    int countAverage = widget.schoolClass.students.where((s) => s.average >= 10.0 && s.average < 12.0).length;
+    int countGood = widget.schoolClass.students.where((s) => s.average >= 12.0 && s.average < 14.0).length;
+    int countVeryGood = widget.schoolClass.students.where((s) => s.average >= 14.0 && s.average < 16.0).length;
+    int countExcellent = widget.schoolClass.students.where((s) => s.average >= 16.0).length;
 
     int totalPresentToday = widget.schoolClass.students.where((s) => s.status == 'حاضر').length;
     int totalAbsentToday = widget.schoolClass.students.where((s) => s.status == 'غائب').length;
@@ -2487,7 +2757,7 @@ $attendanceNotice
       body: TabBarView(
         controller: _tabController,
         children: [
-          // 1. تبويب التلاميذ المطور مع رصد الهروب والخروج بإذن والتأخر
+          // 1. تبويب التلاميذ المطور
           Column(
             children: [
               // شريط البحث وخيارات الترتيب الأبجدي / بالمعدل
@@ -2500,10 +2770,8 @@ $attendanceNotice
                         decoration: InputDecoration(
                           hintText: 'بحث بالاسم، اللقب، أو رقم التعريف...',
                           prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14)),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                         ),
                         onChanged: (val) {
                           setState(() {
@@ -2525,14 +2793,10 @@ $attendanceNotice
                           value: _sortCriteria,
                           icon: const Icon(Icons.sort, color: Color(0xFF0F172A)),
                           items: const [
-                            DropdownMenuItem(
-                                value: 'alphabetical', child: Text('أبجدياً (أ-ي)')),
-                            DropdownMenuItem(
-                                value: 'gradeDesc', child: Text('الأعلى معدلاً')),
-                            DropdownMenuItem(
-                                value: 'gradeAsc', child: Text('الأدنى معدلاً')),
-                            DropdownMenuItem(
-                                value: 'regNumber', child: Text('رقم التعريف')),
+                            DropdownMenuItem(value: 'alphabetical', child: Text('أبجدياً (أ-ي)')),
+                            DropdownMenuItem(value: 'gradeDesc', child: Text('الأعلى معدلاً')),
+                            DropdownMenuItem(value: 'gradeAsc', child: Text('الأدنى معدلاً')),
+                            DropdownMenuItem(value: 'regNumber', child: Text('رقم التعريف')),
                           ],
                           onChanged: (val) {
                             if (val != null) {
@@ -2548,20 +2812,44 @@ $attendanceNotice
                 ),
               ),
 
-              // شريط ملخص حضور اليوم وسجل سريع لكافة الحالات
+              // شريط الأزرار السريعة والتسجيل التتابعي المنبثق
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
+                  color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
+                  border: Border.all(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300),
                 ),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      const Text('اليوم: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      // زر التسجيل التتابعي (طلبك المنبثق)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF059669),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.flash_on, size: 18),
+                        label: const Text('تسجيل تتابعي سريع (طالب بطالب)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        onPressed: _showSequentialAttendanceDialog,
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: _markAllStudentsPresent,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('تحضير الكل ✔', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       Text('$totalPresentToday حاضر 🟢  ', style: const TextStyle(color: Color(0xFF059669), fontWeight: FontWeight.bold, fontSize: 12)),
                       Text('$totalAbsentToday غائب 🔴  ', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12)),
                       if (totalLateToday > 0)
@@ -2570,24 +2858,12 @@ $attendanceNotice
                         Text('$totalEscapeToday هروب 🚨  ', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
                       if (totalPermittedToday > 0)
                         Text('$totalPermittedToday بإذن 📜  ', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 12)),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: _markAllStudentsPresent,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF059669),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text('تحضير الكل ✔', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
                     ],
                   ),
                 ),
               ),
 
-              // قائمة بطاقات التلاميذ الفسيحة
+              // قائمة بطاقات التلاميذ الفسيحة مع إمكانية تعديل كل تلميذ
               Expanded(
                 child: filteredStudents.isEmpty
                     ? const Center(child: Text('لا يوجد تلاميذ مطابقون.'))
@@ -2596,15 +2872,17 @@ $attendanceNotice
                         itemCount: filteredStudents.length,
                         itemBuilder: (context, index) {
                           final student = filteredStudents[index];
-                          List<Student> rankSorted =
-                              List.from(widget.schoolClass.students)
-                                ..sort((a, b) => b.average.compareTo(a.average));
+                          List<Student> rankSorted = List.from(widget.schoolClass.students)
+                            ..sort((a, b) => b.average.compareTo(a.average));
                           int rank = rankSorted.indexOf(student) + 1;
 
                           String statusDisplay = student.status;
                           if (student.statusTime != null && student.statusTime!.isNotEmpty) {
                             statusDisplay += ' (${student.statusTime})';
                           }
+
+                          final badgeBg = _getStatusBgColor(student.status, isDark);
+                          final badgeFg = _getStatusTextColor(student.status, isDark);
 
                           return Card(
                             elevation: 2,
@@ -2616,7 +2894,7 @@ $attendanceNotice
                                     ? Colors.red.shade400
                                     : (student.status == 'غائب'
                                         ? Colors.red.shade200
-                                        : Colors.grey.shade200),
+                                        : Colors.grey.shade300.withOpacity(0.4)),
                                 width: student.status == 'هروب' ? 1.5 : 1,
                               ),
                             ),
@@ -2625,7 +2903,7 @@ $attendanceNotice
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // السطر الأول: الرتبة، الاسم الكامل، وشارة المواظبة المتقدمة
+                                  // السطر الأول: الرتبة، الاسم الكامل، زر تعديل التلميذ، وشارة المواظبة
                                   Row(
                                     children: [
                                       CircleAvatar(
@@ -2645,64 +2923,44 @@ $attendanceNotice
                                           '${student.lastName} ${student.firstName}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16),
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                         ),
                                       ),
-                                      if (student.average >= 16.0)
-                                        const Icon(Icons.star,
-                                            color: Color(0xFFF59E0B), size: 18),
-                                      const SizedBox(width: 6),
-                                      
-                                      // زر المواظبة الشامل (حاضر، غائب، متأخر بوقت، هروب، خروج بإذن)
+                                      // ✅ زر تعديل معلومات التلميذ (طلبك المباشر)
+                                      IconButton(
+                                        icon: const Icon(Icons.edit_note_rounded, color: Color(0xFF059669)),
+                                        tooltip: 'تعديل معلومات التلميذ',
+                                        onPressed: () => _showEditStudentInfoDialog(student),
+                                      ),
+                                      const SizedBox(width: 4),
+
+                                      // زر وشارة الحالة المتناسقة (عالية التباين والوضوح)
                                       PopupMenuButton<String>(
                                         tooltip: 'تغيير وضعية الحضور والمواظبة',
-                                        onSelected: (target) =>
-                                            _showAttendanceActionDialog(
-                                                student, target),
+                                        onSelected: (target) => _showAttendanceActionDialog(student, target),
                                         itemBuilder: (context) => [
-                                          const PopupMenuItem(
-                                              value: 'حاضر', child: Text('حاضر 🟢')),
-                                          const PopupMenuItem(
-                                              value: 'غائب', child: Text('غائب 🔴')),
-                                          const PopupMenuItem(
-                                              value: 'متأخر', child: Text('دخول متأخر (مع وقت) 🟡')),
-                                          const PopupMenuItem(
-                                              value: 'هروب', child: Text('هروب من الحصة (مع وقت) 🚨')),
-                                          const PopupMenuItem(
-                                              value: 'خروج بإذن', child: Text('خروج بترخيص / إذن 📜')),
-                                          const PopupMenuItem(
-                                              value: 'معفى', child: Text('معفى ⚪')),
+                                          const PopupMenuItem(value: 'حاضر', child: Text('حاضر 🟢')),
+                                          const PopupMenuItem(value: 'غائب', child: Text('غائب 🔴')),
+                                          const PopupMenuItem(value: 'متأخر', child: Text('دخول متأخر (مع وقت) 🟡')),
+                                          const PopupMenuItem(value: 'هروب', child: Text('هروب من الحصة (مع وقت) 🚨')),
+                                          const PopupMenuItem(value: 'خروج بإذن', child: Text('خروج بترخيص / إذن 📜')),
+                                          const PopupMenuItem(value: 'معفى', child: Text('معفى ⚪')),
                                         ],
                                         child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 4),
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                           decoration: BoxDecoration(
-                                            color: _getStatusColor(student.status)
-                                                .withOpacity(0.15),
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            border: Border.all(
-                                                color: _getStatusColor(
-                                                    student.status),
-                                                width: 1),
+                                            color: badgeBg,
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: badgeFg.withOpacity(0.5), width: 1),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Icon(_getStatusIcon(student.status),
-                                                  size: 14,
-                                                  color: _getStatusColor(
-                                                      student.status)),
-                                              const SizedBox(width: 4),
+                                              Icon(_getStatusIcon(student.status), size: 15, color: badgeFg),
+                                              const SizedBox(width: 5),
                                               Text(
                                                 statusDisplay,
-                                                style: TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: _getStatusColor(
-                                                        student.status)),
+                                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeFg),
                                               ),
                                             ],
                                           ),
@@ -2712,47 +2970,43 @@ $attendanceNotice
                                   ),
 
                                   // إذا كان هناك سبب مدون (كالخروج بإذن أو الهروب)
-                                  if (student.statusReason != null &&
-                                      student.statusReason!.isNotEmpty) ...[
+                                  if (student.statusReason != null && student.statusReason!.isNotEmpty) ...[
                                     const SizedBox(height: 4),
                                     Text(
                                       'الملاحظة: ${student.statusReason}',
                                       style: TextStyle(
                                           fontSize: 11,
                                           fontStyle: FontStyle.italic,
-                                          color: _getStatusColor(student.status)),
+                                          fontWeight: FontWeight.bold,
+                                          color: badgeFg),
                                     ),
                                   ],
 
                                   const Divider(height: 16),
 
-                                  // السطر الثاني: تفاصيل العلامات والمعدل بوضوح
+                                  // السطر الثاني: تفاصيل العلامات والمعدل بوضوح تام
                                   Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         'المعدل: ${student.average.toStringAsFixed(2)} / 20 (${student.appreciation})',
                                         style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                             color: student.average >= 10.0
-                                                ? const Color(0xFF0F172A)
+                                                ? (isDark ? Colors.white : const Color(0xFF0F172A))
                                                 : Colors.redAccent,
                                             fontSize: 13),
                                       ),
                                       Text(
                                         'رقم: ${student.regNumber}',
-                                        style: const TextStyle(
-                                            color: Colors.grey, fontSize: 12),
+                                        style: const TextStyle(color: Colors.grey, fontSize: 12),
                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
                                     'تقويم: ${student.continuousEval} | ف1: ${student.exam1} | ف2: ${student.exam2 > 0 ? student.exam2 : '-'} | اختبار: ${student.test}',
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.blueGrey.shade800),
+                                    style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade300 : Colors.blueGrey.shade800),
                                   ),
                                   const SizedBox(height: 8),
 
@@ -2762,26 +3016,19 @@ $attendanceNotice
                                     children: [
                                       TextButton.icon(
                                         style: TextButton.styleFrom(
-                                          foregroundColor:
-                                              const Color(0xFFD97706),
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8),
+                                          foregroundColor: const Color(0xFFD97706),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
                                         ),
-                                        icon: const Icon(Icons.picture_as_pdf,
-                                            size: 18),
-                                        label: const Text('كشف نقاط',
-                                            style: TextStyle(fontSize: 12)),
-                                        onPressed: () =>
-                                            _exportStudentBulletinPdf(
-                                                student, rank),
+                                        icon: const Icon(Icons.picture_as_pdf, size: 18),
+                                        label: const Text('كشف نقاط', style: TextStyle(fontSize: 12)),
+                                        onPressed: () => _exportStudentBulletinPdf(student, rank),
                                       ),
                                       TextButton.icon(
                                         style: TextButton.styleFrom(
                                           foregroundColor: student.status == 'هروب'
                                               ? Colors.red
                                               : const Color(0xFF059669),
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
                                         ),
                                         icon: Icon(
                                             student.status == 'هروب'
@@ -2793,23 +3040,16 @@ $attendanceNotice
                                                 ? 'إشعار هروب'
                                                 : 'إشعار الولي',
                                             style: const TextStyle(fontSize: 12)),
-                                        onPressed: () =>
-                                            _sendGuardianNotification(student),
+                                        onPressed: () => _sendGuardianNotification(student),
                                       ),
                                       TextButton.icon(
                                         style: TextButton.styleFrom(
-                                          foregroundColor:
-                                              const Color(0xFF0F172A),
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8),
+                                          foregroundColor: isDark ? Colors.lightBlueAccent : const Color(0xFF0F172A),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
                                         ),
-                                        icon: const Icon(Icons.edit_note,
-                                            size: 18),
-                                        label: const Text('العلامات',
-                                            style: TextStyle(fontSize: 12)),
-                                        onPressed: () =>
-                                            _showEditStudentGradesDialog(
-                                                student),
+                                        icon: const Icon(Icons.edit_note, size: 18),
+                                        label: const Text('العلامات', style: TextStyle(fontSize: 12)),
+                                        onPressed: () => _showEditStudentGradesDialog(student),
                                       ),
                                     ],
                                   ),
@@ -2834,17 +3074,14 @@ $attendanceNotice
                     child: Column(
                       children: [
                         const Text('توزيع معدلات الفوج بيانيا',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 24),
                         SizedBox(
                           height: 200,
                           child: BarChart(
                             BarChartData(
                               alignment: BarChartAlignment.spaceAround,
-                              maxY: (widget.schoolClass.students.length
-                                      .toDouble() +
-                                  2),
+                              maxY: (widget.schoolClass.students.length.toDouble() + 2),
                               barTouchData: BarTouchData(enabled: true),
                               titlesData: FlTitlesData(
                                 show: true,
@@ -2869,46 +3106,18 @@ $attendanceNotice
                                     },
                                   ),
                                 ),
-                                leftTitles: const AxisTitles(
-                                    sideTitles: SideTitles(showTitles: false)),
-                                topTitles: const AxisTitles(
-                                    sideTitles: SideTitles(showTitles: false)),
-                                rightTitles: const AxisTitles(
-                                    sideTitles: SideTitles(showTitles: false)),
+                                leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                               ),
                               gridData: const FlGridData(show: false),
                               borderData: FlBorderData(show: false),
                               barGroups: [
-                                BarChartGroupData(x: 0, barRods: [
-                                  BarChartRodData(
-                                      toY: countWeak.toDouble(),
-                                      color: Colors.redAccent,
-                                      width: 22)
-                                ]),
-                                BarChartGroupData(x: 1, barRods: [
-                                  BarChartRodData(
-                                      toY: countAverage.toDouble(),
-                                      color: Colors.orange,
-                                      width: 22)
-                                ]),
-                                BarChartGroupData(x: 2, barRods: [
-                                  BarChartRodData(
-                                      toY: countGood.toDouble(),
-                                      color: Colors.blueGrey,
-                                      width: 22)
-                                ]),
-                                BarChartGroupData(x: 3, barRods: [
-                                  BarChartRodData(
-                                      toY: countVeryGood.toDouble(),
-                                      color: const Color(0xFF0D9488),
-                                      width: 22)
-                                ]),
-                                BarChartGroupData(x: 4, barRods: [
-                                  BarChartRodData(
-                                      toY: countExcellent.toDouble(),
-                                      color: const Color(0xFFF59E0B),
-                                      width: 22)
-                                ]),
+                                BarChartGroupData(x: 0, barRods: [BarChartRodData(toY: countWeak.toDouble(), color: Colors.redAccent, width: 22)]),
+                                BarChartGroupData(x: 1, barRods: [BarChartRodData(toY: countAverage.toDouble(), color: Colors.orange, width: 22)]),
+                                BarChartGroupData(x: 2, barRods: [BarChartRodData(toY: countGood.toDouble(), color: Colors.blueGrey, width: 22)]),
+                                BarChartGroupData(x: 3, barRods: [BarChartRodData(toY: countVeryGood.toDouble(), color: const Color(0xFF0D9488), width: 22)]),
+                                BarChartGroupData(x: 4, barRods: [BarChartRodData(toY: countExcellent.toDouble(), color: const Color(0xFFF59E0B), width: 22)]),
                               ],
                             ),
                           ),
@@ -2920,15 +3129,11 @@ $attendanceNotice
                 const SizedBox(height: 16),
                 Card(
                   child: ListTile(
-                    leading: const Icon(Icons.trending_up,
-                        color: Color(0xFF059669), size: 32),
+                    leading: const Icon(Icons.trending_up, color: Color(0xFF059669), size: 32),
                     title: const Text('نسبة النجاح العامة في الفوج'),
                     trailing: Text(
                       '${widget.schoolClass.students.isEmpty ? "0" : ((widget.schoolClass.students.where((s) => s.average >= 10.0).length / widget.schoolClass.students.length) * 100).toStringAsFixed(1)} %',
-                      style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF059669)),
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
                     ),
                   ),
                 ),
@@ -2942,9 +3147,7 @@ $attendanceNotice
               Padding(
                 padding: const EdgeInsets.all(12.0),
                 child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0F172A),
-                      foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
                   icon: const Icon(Icons.add),
                   label: const Text('إضافة مذكرة درس جديد'),
                   onPressed: () => _showAddNoteDialog(),
@@ -2952,36 +3155,25 @@ $attendanceNotice
               ),
               Expanded(
                 child: widget.schoolClass.lessonNotes.isEmpty
-                    ? const Center(
-                        child: Text('لا توجد مذكرات دروس مسجلة بعد.'))
+                    ? const Center(child: Text('لا توجد مذكرات دروس مسجلة بعد.'))
                     : ListView.builder(
                         itemCount: widget.schoolClass.lessonNotes.length,
                         itemBuilder: (context, index) {
                           final note = widget.schoolClass.lessonNotes[index];
                           return Card(
-                            margin: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
+                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             child: ListTile(
-                              title: Text('${note.date}: ${note.title}',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold)),
-                              subtitle: Text(
-                                  'الخلاصة: ${note.summary}\nالواجب: ${note.homework}'),
+                              title: Text('${note.date}: ${note.title}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text('الخلاصة: ${note.summary}\nالواجب: ${note.homework}'),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  IconButton(icon: const Icon(Icons.edit, color: Colors.blueGrey), onPressed: () => _showAddNoteDialog(note: note)),
                                   IconButton(
-                                      icon: const Icon(Icons.edit,
-                                          color: Colors.blueGrey),
-                                      onPressed: () => _showAddNoteDialog(
-                                          note: note)),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete,
-                                        color: Colors.redAccent),
+                                    icon: const Icon(Icons.delete, color: Colors.redAccent),
                                     onPressed: () async {
                                       setState(() {
-                                        widget.schoolClass.lessonNotes
-                                            .removeAt(index);
+                                        widget.schoolClass.lessonNotes.removeAt(index);
                                       });
                                       await SchoolData.saveData();
                                     },
@@ -2996,7 +3188,7 @@ $attendanceNotice
             ],
           ),
 
-          // 4. تبويب سجل الحضور والغياب المفصل (مع رصد أوقات التأخر والهروب)
+          // 4. تبويب سجل الحضور والغياب المفصل
           Column(
             children: [
               Padding(
@@ -3027,23 +3219,12 @@ $attendanceNotice
                         padding: const EdgeInsets.all(12),
                         itemCount: widget.schoolClass.dailyRecords.length,
                         itemBuilder: (context, index) {
-                          final record =
-                              widget.schoolClass.dailyRecords[index];
-                          int present = record.studentStatuses.values
-                              .where((v) => v.status == 'حاضر')
-                              .length;
-                          int absent = record.studentStatuses.values
-                              .where((v) => v.status == 'غائب')
-                              .length;
-                          int lateCount = record.studentStatuses.values
-                              .where((v) => v.status == 'متأخر')
-                              .length;
-                          int escapeCount = record.studentStatuses.values
-                              .where((v) => v.status == 'هروب')
-                              .length;
-                          int permitCount = record.studentStatuses.values
-                              .where((v) => v.status == 'خروج بإذن')
-                              .length;
+                          final record = widget.schoolClass.dailyRecords[index];
+                          int present = record.studentStatuses.values.where((v) => v.status == 'حاضر').length;
+                          int absent = record.studentStatuses.values.where((v) => v.status == 'غائب').length;
+                          int lateCount = record.studentStatuses.values.where((v) => v.status == 'متأخر').length;
+                          int escapeCount = record.studentStatuses.values.where((v) => v.status == 'هروب').length;
+                          int permitCount = record.studentStatuses.values.where((v) => v.status == 'خروج بإذن').length;
 
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
@@ -3051,22 +3232,16 @@ $attendanceNotice
                               leading: CircleAvatar(
                                   backgroundColor: escapeCount > 0 ? Colors.red : const Color(0xFF059669),
                                   child: Icon(escapeCount > 0 ? Icons.warning : Icons.event, color: Colors.white)),
-                              title: Text('تاريخ الحصة: ${record.date}',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold)),
+                              title: Text('تاريخ الحصة: ${record.date}', style: const TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: Text(
                                   'حاضر: $present | غائب: $absent | متأخر: $lateCount ${escapeCount > 0 ? "| هروب: $escapeCount" : ""} ${permitCount > 0 ? "| إذن: $permitCount" : ""}'),
                               children: [
                                 Padding(
                                   padding: const EdgeInsets.all(12.0),
                                   child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: record.studentStatuses.entries
-                                        .map((entry) {
-                                      final student = widget
-                                          .schoolClass.students
-                                          .firstWhere(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: record.studentStatuses.entries.map((entry) {
+                                      final student = widget.schoolClass.students.firstWhere(
                                         (s) => s.regNumber == entry.key,
                                         orElse: () => Student(
                                             firstName: '',
@@ -3082,36 +3257,29 @@ $attendanceNotice
                                         label += ' (${detail.time})';
                                       }
 
+                                      final bBg = _getStatusBgColor(detail.status, isDark);
+                                      final bFg = _getStatusTextColor(detail.status, isDark);
+
                                       return Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 3.0),
+                                        padding: const EdgeInsets.symmetric(vertical: 3.0),
                                         child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
                                             Expanded(
                                               child: Text(
                                                   '${student.lastName} ${student.firstName} (${student.regNumber}) ${detail.reason != null && detail.reason!.isNotEmpty ? " - " + detail.reason! : ""}'),
                                             ),
                                             Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 2),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: _getStatusColor(
-                                                        detail.status)
-                                                    .withOpacity(0.2),
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
+                                                color: bBg,
+                                                borderRadius: BorderRadius.circular(6),
                                               ),
                                               child: Text(
                                                 label,
                                                 style: TextStyle(
-                                                  color: _getStatusColor(
-                                                      detail.status),
-                                                  fontWeight:
-                                                      FontWeight.bold,
+                                                  color: bFg,
+                                                  fontWeight: FontWeight.bold,
                                                   fontSize: 11,
                                                 ),
                                               ),
@@ -3138,32 +3306,23 @@ $attendanceNotice
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.cloud_upload_outlined,
-                      size: 70, color: Color(0xFF059669)),
+                  const Icon(Icons.cloud_upload_outlined, size: 70, color: Color(0xFF059669)),
                   const SizedBox(height: 16),
-                  const Text(
-                      'استيراد قائمة التلاميذ من ملف Excel أو منصة «رقمنة»',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center),
+                  const Text('استيراد قائمة التلاميذ من ملف Excel أو منصة «رقمنة»',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                   const SizedBox(height: 8),
-                  const Text(
-                      'يدعم ملفات الهاتف (.xlsx و .xls) مع التعرّف التلقائي على الأعمدة والأسماء.',
-                      style: TextStyle(color: Colors.grey, fontSize: 13),
-                      textAlign: TextAlign.center),
+                  const Text('يدعم ملفات الهاتف (.xlsx و .xls) مع التعرّف التلقائي على الأعمدة والأسماء.',
+                      style: TextStyle(color: Colors.grey, fontSize: 13), textAlign: TextAlign.center),
                   const SizedBox(height: 24),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0F172A),
                       foregroundColor: const Color(0xFFF59E0B),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                     icon: const Icon(Icons.folder_open),
-                    label: const Text('اختيار ملف من ذاكرة الهاتف',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text('اختيار ملف من ذاكرة الهاتف', style: TextStyle(fontWeight: FontWeight.bold)),
                     onPressed: _importStudentsFromExcel,
                   ),
                 ],
@@ -3191,35 +3350,20 @@ $attendanceNotice
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-            note == null ? 'إضافة مذكرة درس جديد' : 'تعديل مذكرة الدرس'),
+        title: Text(note == null ? 'إضافة مذكرة درس جديد' : 'تعديل مذكرة الدرس'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                  controller: dateCtrl,
-                  decoration: const InputDecoration(labelText: 'التاريخ')),
-              TextField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'عنوان الدرس والمحور')),
-              TextField(
-                  controller: summaryCtrl,
-                  maxLines: 3,
-                  decoration:
-                      const InputDecoration(labelText: 'خلاصة الدرس')),
-              TextField(
-                  controller: homeworkCtrl,
-                  decoration:
-                      const InputDecoration(labelText: 'الواجب المنزلي')),
+              TextField(controller: dateCtrl, decoration: const InputDecoration(labelText: 'التاريخ')),
+              TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'عنوان الدرس والمحور')),
+              TextField(controller: summaryCtrl, maxLines: 3, decoration: const InputDecoration(labelText: 'خلاصة الدرس')),
+              TextField(controller: homeworkCtrl, decoration: const InputDecoration(labelText: 'الواجب المنزلي')),
             ],
           ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           ElevatedButton(
             onPressed: () async {
               if (titleCtrl.text.trim().isNotEmpty) {
@@ -3259,10 +3403,7 @@ $attendanceNotice
         searchDirs.add(docDir);
       } catch (_) {}
 
-      for (var path in [
-        '/storage/emulated/0/Download',
-        '/storage/emulated/0/Documents'
-      ]) {
+      for (var path in ['/storage/emulated/0/Download', '/storage/emulated/0/Documents']) {
         try {
           final dir = Directory(path);
           if (dir.existsSync()) {
@@ -3290,15 +3431,12 @@ $attendanceNotice
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             children: const [
               Icon(Icons.table_chart, color: Color(0xFF059669)),
               SizedBox(width: 8),
-              Text('اختر ملف الإكسل (Excel)',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16)),
+              Text('اختر ملف الإكسل (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             ],
           ),
           content: SizedBox(
@@ -3311,14 +3449,12 @@ $attendanceNotice
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: const [
-                          Icon(Icons.folder_open,
-                              size: 54, color: Colors.grey),
+                          Icon(Icons.folder_open, size: 54, color: Colors.grey),
                           SizedBox(height: 12),
                           Text(
                             'لم يتم العثور على ملفات .xlsx في مجلد Downloads.\nيرجى وضع ملف القائمة في مجلد التنزيلات بهاتفك أو مجلد المستندات.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: Colors.grey, fontSize: 13),
+                            style: TextStyle(color: Colors.grey, fontSize: 13),
                           ),
                         ],
                       ),
@@ -3332,16 +3468,12 @@ $attendanceNotice
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         child: ListTile(
-                          leading: const Icon(Icons.description,
-                              color: Color(0xFF059669)),
-                          title: Text(fileName,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13)),
+                          leading: const Icon(Icons.description, color: Color(0xFF059669)),
+                          title: Text(fileName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           subtitle: Text(f.path,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 10, color: Colors.grey)),
+                              style: const TextStyle(fontSize: 10, color: Colors.grey)),
                           onTap: () async {
                             Navigator.pop(ctx);
                             Uint8List bytes = await f.readAsBytes();
@@ -3353,16 +3485,13 @@ $attendanceNotice
                   ),
           ),
           actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('إلغاء')),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
           ],
         ),
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('خطأ أثناء قراءة الملفات: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ أثناء قراءة الملفات: $e')));
       }
     }
   }
@@ -3379,9 +3508,7 @@ $attendanceNotice
         int startIndex = 0;
         if (rows.isNotEmpty) {
           String firstCell = extractCellString(rows[0][0]);
-          if (firstCell.contains('اللقب') ||
-              firstCell.contains('Nom') ||
-              firstCell.contains('الرقم')) {
+          if (firstCell.contains('اللقب') || firstCell.contains('Nom') || firstCell.contains('الرقم')) {
             startIndex = 1;
           }
         }
@@ -3393,8 +3520,7 @@ $attendanceNotice
           String col0 = row.isNotEmpty ? extractCellString(row[0]) : '';
           String col1 = row.length > 1 ? extractCellString(row[1]) : '';
           String col2 = row.length > 2 ? extractCellString(row[2]) : '';
-          String col3 =
-              row.length > 3 ? extractCellString(row[3]) : '01/01/2007';
+          String col3 = row.length > 3 ? extractCellString(row[3]) : '01/01/2007';
 
           String lastName = col0;
           String firstName = col1;
@@ -3410,9 +3536,7 @@ $attendanceNotice
             widget.schoolClass.students.add(Student(
               lastName: lastName,
               firstName: firstName,
-              regNumber: regNum.isEmpty
-                  ? '2026${widget.schoolClass.students.length + addedCount + 1}'
-                  : regNum,
+              regNumber: regNum.isEmpty ? '2026${widget.schoolClass.students.length + addedCount + 1}' : regNum,
               birthDate: col3.isEmpty ? '01/01/2007' : col3,
               birthPlace: 'الجلفة',
             ));
@@ -3424,14 +3548,11 @@ $attendanceNotice
       await SchoolData.saveData();
       setState(() {});
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text('تم استيراد $addedCount تلميذاً بنجاح من الهاتف!')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تم استيراد $addedCount تلميذاً بنجاح من الهاتف!')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('خطأ أثناء قراءة ملف الإكسل: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ أثناء قراءة ملف الإكسل: $e')));
       }
     }
   }
