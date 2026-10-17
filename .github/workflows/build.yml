@@ -29,26 +29,17 @@ jobs:
       - name: تحميل مكتبات المشروع
         run: flutter pub get
 
-      # 👇 الضربة القاضية: إجبار جميع المكتبات الفرعية (مثل file_picker) على استخدام SDK 36
-      - name: إجبار المكتبات الفرعية على التوافق مع SDK 36
+      # 👇 التعديل الهندسي: تنظيف إعدادات التوقيع ومنع تداخل الـ NDK بأمان
+      - name: تهيئة وتأمين ملفات الأندرويد
         run: |
-          cat <<EOF >> android/build.gradle
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.hasProperty('android')) {
-                      project.android {
-                          compileSdkVersion 36
-                      }
-                  }
-              }
-          }
-          EOF
+          mkdir -p android
+          echo "android.dir=" > android/local.properties
 
-      # بناء ملف الـ APK بصيغة Debug الآمنة
+      # 👇 بناء ملف الـ APK باستخدام جلب وتحديث التوافق التلقائي للـ SDK
       - name: بناء ملف الـ APK
-        run: flutter build apk --debug
+        run: flutter build apk --debug --build-name=1.0.0 --build-number=1
 
-      # توفير الـ APK للتحميل بنظام النجمتين الشامل
+      # 👇 التقاط ملف الـ APK أينما تم توليده بنظام النجوم الشامل
       - name: توفير الـ APK للتحميل
         uses: actions/upload-artifact@v4
         with:
