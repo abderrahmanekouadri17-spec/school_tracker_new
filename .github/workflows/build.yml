@@ -29,18 +29,26 @@ jobs:
       - name: تحميل مكتبات المشروع
         run: flutter pub get
 
-      # 👇 الضربة القاضية: منع تحميل الـ NDK نهائياً وتعطيله في ملفات الخصائص قبل البناء
-      - name: منع تحميل الـ NDK برمجياً
+      # 👇 الضربة القاضية: إجبار جميع المكتبات الفرعية (مثل file_picker) على استخدام SDK 36
+      - name: إجبار المكتبات الفرعية على التوافق مع SDK 36
         run: |
-          mkdir -p android
-          echo "android.dir=" > android/local.properties
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i '/ndkVersion/d' android/app/build.gradle.kts
-          fi
+          cat <<EOF >> android/build.gradle
+          subprojects {
+              afterEvaluate { project ->
+                  if (project.hasProperty('android')) {
+                      project.android {
+                          compileSdkVersion 36
+                      }
+                  }
+              }
+          }
+          EOF
 
+      # بناء ملف الـ APK بصيغة Debug الآمنة
       - name: بناء ملف الـ APK
         run: flutter build apk --debug
 
+      # توفير الـ APK للتحميل بنظام النجمتين الشامل
       - name: توفير الـ APK للتحميل
         uses: actions/upload-artifact@v4
         with:
