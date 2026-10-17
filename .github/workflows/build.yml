@@ -29,17 +29,14 @@ jobs:
       - name: تحميل مكتبات المشروع
         run: flutter pub get
 
-      # 👇 التعديل الهندسي: تنظيف إعدادات التوقيع ومنع تداخل الـ NDK بأمان
       - name: تهيئة وتأمين ملفات الأندرويد
         run: |
           mkdir -p android
           echo "android.dir=" > android/local.properties
 
-      # 👇 بناء ملف الـ APK باستخدام جلب وتحديث التوافق التلقائي للـ SDK
       - name: بناء ملف الـ APK
-        run: flutter build apk --debug --build-name=1.0.0 --build-number=1
+        run: flutter build apk --debug
 
-      # 👇 التقاط ملف الـ APK أينما تم توليده بنظام النجوم الشامل
       - name: توفير الـ APK للتحميل
         uses: actions/upload-artifact@v4
         with:
