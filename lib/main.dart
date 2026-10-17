@@ -13,6 +13,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:file_picker/file_picker.dart';
 
 // دالة موحدة لتوليد تاريخ اليوم بالصيغة الرسمية الجزائرية DD/MM/YYYY
 String todayStr() {
@@ -159,6 +160,74 @@ class DailyAttendanceRecord {
   }
 }
 
+// ✅ السجل اليومي للقسم بالوقت والتاريخ
+class ClassDailyLogEntry {
+  final String date;
+  final String time;
+  final String action; // تعديل علامة، إضافة تلميذ، حذف تلميذ، تسجيل حضور، استيراد إلخ
+  final String details;
+  final String performedBy; // اسم المستخدم / الأستاذ الذي نفذ الإجراء
+
+  ClassDailyLogEntry({
+    required this.date,
+    required this.time,
+    required this.action,
+    required this.details,
+    required this.performedBy,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'date': date,
+        'time': time,
+        'action': action,
+        'details': details,
+        'performedBy': performedBy,
+      };
+
+  factory ClassDailyLogEntry.fromJson(Map<String, dynamic> json) =>
+      ClassDailyLogEntry(
+        date: json['date'] ?? todayStr(),
+        time: json['time'] ?? currentTimeStr(),
+        action: json['action'] ?? '',
+        details: json['details'] ?? '',
+        performedBy: json['performedBy'] ?? '',
+      );
+}
+
+// ✅ سجل كل تلميذ لوحده بالوقت والتاريخ بالضبط
+class StudentPersonalLogEntry {
+  final String date;
+  final String time;
+  final String action; // ملاحظة سلوكية، استدعاء ولي، تعديل بيانات، إلخ
+  final String details;
+  final String performedBy;
+
+  StudentPersonalLogEntry({
+    required this.date,
+    required this.time,
+    required this.action,
+    required this.details,
+    required this.performedBy,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'date': date,
+        'time': time,
+        'action': action,
+        'details': details,
+        'performedBy': performedBy,
+      };
+
+  factory StudentPersonalLogEntry.fromJson(Map<String, dynamic> json) =>
+      StudentPersonalLogEntry(
+        date: json['date'] ?? todayStr(),
+        time: json['time'] ?? currentTimeStr(),
+        action: json['action'] ?? '',
+        details: json['details'] ?? '',
+        performedBy: json['performedBy'] ?? '',
+      );
+}
+
 class TimetableItem {
   String day;
   String timeSlot;
@@ -204,6 +273,9 @@ class Student {
   int points;
   List<BehaviorLog> logs;
 
+  // ✅ سجل تلميذ فردي
+  List<StudentPersonalLogEntry> personalLogs;
+
   Student({
     required this.firstName,
     required this.lastName,
@@ -220,7 +292,9 @@ class Student {
     this.coefficient = 1.0,
     this.points = 0,
     List<BehaviorLog>? logs,
-  }) : logs = logs ?? [];
+    List<StudentPersonalLogEntry>? personalLogs,
+  })  : logs = logs ?? [],
+        personalLogs = personalLogs ?? [];
 
   /// حساب معدل المادة وفق المنظومة الرسمية الجزائرية
   double get average {
@@ -272,6 +346,8 @@ class Student {
         'coefficient': coefficient,
         'points': points,
         'logs': logs.map((l) => l.toJson()).toList(),
+        // ✅ حفظ سجل التلميذ الفردي
+        'personalLogs': personalLogs.map((l) => l.toJson()).toList(),
       };
 
   factory Student.fromJson(Map<String, dynamic> json) => Student(
@@ -294,6 +370,12 @@ class Student {
                 .map((l) => BehaviorLog.fromJson(l))
                 .toList()
             : [],
+        // ✅ استرجاع سجل التلميذ الفردي
+        personalLogs: json['personalLogs'] != null
+            ? (json['personalLogs'] as List)
+                .map((l) => StudentPersonalLogEntry.fromJson(l))
+                .toList()
+            : [],
       );
 }
 
@@ -303,19 +385,26 @@ class SchoolClass {
   List<LessonNote> lessonNotes;
   List<DailyAttendanceRecord> dailyRecords;
 
+  // ✅ سجل القسم اليومي
+  List<ClassDailyLogEntry> dailyLogs;
+
   SchoolClass({
     required this.name,
     required this.students,
     List<LessonNote>? lessonNotes,
     List<DailyAttendanceRecord>? dailyRecords,
+    List<ClassDailyLogEntry>? dailyLogs,
   })  : lessonNotes = lessonNotes ?? [],
-        dailyRecords = dailyRecords ?? [];
+        dailyRecords = dailyRecords ?? [],
+        dailyLogs = dailyLogs ?? [];
 
   Map<String, dynamic> toJson() => {
         'name': name,
         'students': students.map((s) => s.toJson()).toList(),
         'lessonNotes': lessonNotes.map((l) => l.toJson()).toList(),
         'dailyRecords': dailyRecords.map((d) => d.toJson()).toList(),
+        // ✅ حفظ سجل القسم اليومي
+        'dailyLogs': dailyLogs.map((d) => d.toJson()).toList(),
       };
 
   factory SchoolClass.fromJson(Map<String, dynamic> json) => SchoolClass(
@@ -333,6 +422,12 @@ class SchoolClass {
         dailyRecords: json['dailyRecords'] != null
             ? (json['dailyRecords'] as List)
                 .map((d) => DailyAttendanceRecord.fromJson(d))
+                .toList()
+            : [],
+        // ✅ استرجاع سجل القسم اليومي
+        dailyLogs: json['dailyLogs'] != null
+            ? (json['dailyLogs'] as List)
+                .map((d) => ClassDailyLogEntry.fromJson(d))
                 .toList()
             : [],
       );
@@ -1708,7 +1803,7 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   // ✅ 1. نافذة تعديل معلومات التلميذ الشاملة (طلب المستخدم)
@@ -1788,6 +1883,9 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                     SnackBar(content: Text('تم تحديث بيانات التلميذ: ${student.lastName} ${student.firstName} بنجاح ✅')),
                   );
                 }
+                // ✅ تسجيل السجلات
+                _addClassLog('تعديل معلومات تلميذ', 'تم تعديل بيانات الطالب: ${student.lastName} ${student.firstName}');
+                _addStudentLog(student, 'تعديل بيانات شخصية', 'تم تحديث الاسم، اللقب، رقم التعريف، تاريخ ومكان الميلاد');
               }
             },
           ),
@@ -2072,6 +2170,11 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
                 });
                 await SchoolData.saveData();
                 if (mounted) Navigator.pop(context);
+                // ✅ تسجيل السجلات
+                _addClassLog('إضافة تلميذ جديد',
+                    'تمت إضافة التلميذ ${lastCtrl.text.trim()} ${firstCtrl.text.trim()} (${regCtrl.text.trim()})');
+                _addStudentLog(widget.schoolClass.students.last, 'إنشاء ملف تلميذ',
+                    'تم إنشاء سجل تلميذ جديد في القسم ${widget.schoolClass.name}');
               }
             },
             child: const Text('إضافة'),
@@ -2079,6 +2182,34 @@ class _ClassDashboardScreenState extends State<ClassDashboardScreen>
         ],
       ),
     );
+  }
+
+  // ✅ إضافة سجل يومي للقسم (تاريخ، وقت، إجراء، تفاصيل، من قام به)
+  void _addClassLog(String action, String details) {
+    setState(() {
+      widget.schoolClass.dailyLogs.add(ClassDailyLogEntry(
+        date: todayStr(),
+        time: currentTimeStr(),
+        action: action,
+        details: details,
+        performedBy: widget.teacher.name,
+      ));
+    });
+    SchoolData.saveData();
+  }
+
+  // ✅ إضافة سجل فردي لتلميذ (تاريخ، وقت، إجراء، تفاصيل، من قام به)
+  void _addStudentLog(Student student, String action, String details) {
+    setState(() {
+      student.personalLogs.add(StudentPersonalLogEntry(
+        date: todayStr(),
+        time: currentTimeStr(),
+        action: action,
+        details: details,
+        performedBy: widget.teacher.name,
+      ));
+    });
+    SchoolData.saveData();
   }
 
   // تصدير سجل القسم المجمع بالكامل
@@ -2466,6 +2597,9 @@ $attendanceNotice
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث العلامات بنجاح!')));
                 }
+                // ✅ تسجيل السجلات
+                _addClassLog('تعديل علامات تلميذ', 'تم تحديث علامات الطالب: ${student.lastName} ${student.firstName}');
+                _addStudentLog(student, 'تعديل العلامات', 'تم تحديث التقويم المستمر والفروض والاختبار');
               }
             },
             child: const Text('حفظ'),
@@ -2569,6 +2703,11 @@ $attendanceNotice
       );
     });
     SchoolData.saveData();
+    // ✅ تسجيل السجلات عند تغيير الحضور
+    _addClassLog('تسجيل حضور وغياب',
+        'تم تسجيل حالة "$newStatus" للتلميذ ${student.lastName} ${student.firstName} في الوقت $time');
+    _addStudentLog(student, 'تسجيل حضور',
+        'تم تسجيل حالة الحضور: $newStatus في الوقت $time (${reason != null ? reason : "بدون سبب"})');
   }
 
   void _markAllStudentsPresent() {
@@ -2594,13 +2733,47 @@ $attendanceNotice
       }
     });
     SchoolData.saveData();
+    // ✅ سجل قسم
+    _addClassLog('تحضير حضور الكل', 'تم تسجيل جميع تلاميذ القسم ${widget.schoolClass.name} كحاضرين لهذا اليوم');
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم تسجيل جميع التلاميذ كـ (حاضرين) لهذا اليوم!')),
     );
   }
 
+  // ✅ حذف تلميذ مع تسجيل السجل
+  void _deleteStudent(Student student) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف التلميذ'),
+        content: Text(
+            'هل أنت متأكد من حذف التلميذ "${student.lastName} ${student.firstName}" نهائياً؟'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () async {
+              setState(() {
+                widget.schoolClass.students.remove(student);
+              });
+              _addClassLog('حذف تلميذ',
+                  'تم حذف التلميذ ${student.lastName} ${student.firstName} (${student.regNumber})');
+              await SchoolData.saveData();
+              if (mounted) Navigator.pop(ctx);
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('تم حذف التلميذ بنجاح!')));
+            },
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ✅ 3. الألوان المتناسقة ذات التباين العالي (High Contrast Badges)
-  // يضمن وضوح وقراءة النص بامتياز تحت اللون في كلا الوضعين
   Color _getStatusBgColor(String status, bool isDark) {
     if (isDark) {
       switch (status) {
@@ -2690,6 +2863,377 @@ $attendanceNotice
     }
   }
 
+  // ✅ عرض سجل التلميذ الشخصي
+  void _showStudentPersonalLogDialog(Student student) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('سجل التلميذ الشخصي: ${student.lastName} ${student.firstName}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: Column(
+            children: [
+              Expanded(
+                child: student.personalLogs.isEmpty
+                    ? const Center(child: Text('لا توجد ملاحظات مسجلة لهذا التلميذ بعد.'))
+                    : ListView.builder(
+                        itemCount: student.personalLogs.length,
+                        itemBuilder: (ctx, i) {
+                          final log = student.personalLogs[i];
+                          return ListTile(
+                            title: Text(log.action),
+                            subtitle: Text(
+                                '${log.details}\n${log.date} - ${log.time} | بواسطة: ${log.performedBy}'),
+                            trailing: Text('${log.time}',
+                                style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق')),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF059669), foregroundColor: Colors.white),
+            icon: const Icon(Icons.add),
+            label: const Text('إضافة ملاحظة'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showAddStudentLogDialog(student);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ إضافة ملاحظة لسجل تلميذ فردي
+  void _showAddStudentLogDialog(Student student) {
+    final actionCtrl = TextEditingController();
+    final detailsCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('إضافة ملاحظة شخصية للتلميذ'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+                controller: actionCtrl,
+                decoration: const InputDecoration(labelText: 'نوع الملاحظة (مثل: سلوك، استدعاء، تعديل بيانات)')),
+            const SizedBox(height: 8),
+            TextField(
+                controller: detailsCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'تفاصيل الملاحظة')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF059669), foregroundColor: Colors.white),
+            onPressed: () async {
+              if (actionCtrl.text.trim().isNotEmpty && detailsCtrl.text.trim().isNotEmpty) {
+                _addStudentLog(student, actionCtrl.text.trim(), detailsCtrl.text.trim());
+                if (mounted) Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('تمت إضافة الملاحظة إلى سجل التلميذ: ${student.lastName} ${student.firstName}')),
+                );
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ إضافة سجل يومي للقسم يدوياً
+  void _showAddClassLogDialog() {
+    final actionCtrl = TextEditingController();
+    final detailsCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('إضافة سجل يومي للقسم'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+                controller: actionCtrl,
+                decoration: const InputDecoration(labelText: 'نوع السجل (مثل: تعديل علامة، حضور، استيراد)')),
+            const SizedBox(height: 8),
+            TextField(
+                controller: detailsCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'تفاصيل السجل')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
+            onPressed: () async {
+              if (actionCtrl.text.trim().isNotEmpty && detailsCtrl.text.trim().isNotEmpty) {
+                _addClassLog(actionCtrl.text.trim(), detailsCtrl.text.trim());
+                if (mounted) Navigator.pop(ctx);
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('تمت إضافة السجل اليومي للقسم بنجاح!')));
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddNoteDialog({LessonNote? note}) {
+    final dateCtrl = TextEditingController(text: note?.date ?? todayStr());
+    final titleCtrl = TextEditingController(text: note?.title ?? '');
+    final summaryCtrl = TextEditingController(text: note?.summary ?? '');
+    final homeworkCtrl = TextEditingController(text: note?.homework ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(note == null ? 'إضافة مذكرة درس جديد' : 'تعديل مذكرة الدرس'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: dateCtrl, decoration: const InputDecoration(labelText: 'التاريخ')),
+              TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'عنوان الدرس والمحور')),
+              TextField(controller: summaryCtrl, maxLines: 3, decoration: const InputDecoration(labelText: 'خلاصة الدرس')),
+              TextField(controller: homeworkCtrl, decoration: const InputDecoration(labelText: 'الواجب المنزلي')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+          ElevatedButton(
+            onPressed: () async {
+              if (titleCtrl.text.trim().isNotEmpty) {
+                setState(() {
+                  if (note == null) {
+                    widget.schoolClass.lessonNotes.add(LessonNote(
+                      date: dateCtrl.text.trim(),
+                      title: titleCtrl.text.trim(),
+                      summary: summaryCtrl.text.trim(),
+                      homework: homeworkCtrl.text.trim(),
+                    ));
+                  } else {
+                    note.date = dateCtrl.text.trim();
+                    note.title = titleCtrl.text.trim();
+                    note.summary = summaryCtrl.text.trim();
+                    note.homework = homeworkCtrl.text.trim();
+                  }
+                });
+                await SchoolData.saveData();
+                if (mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ استيراد Excel من ذاكرة الهاتف مع اختيار يدوي للملف
+  Future<void> _importStudentsFromExcel() async {
+    try {
+      List<File> excelFiles = [];
+      List<Directory> searchDirs = [];
+
+      try {
+        final docDir = await getApplicationDocumentsDirectory();
+        searchDirs.add(docDir);
+      } catch (_) {}
+
+      for (var path in ['/storage/emulated/0/Download', '/storage/emulated/0/Documents']) {
+        try {
+          final dir = Directory(path);
+          if (dir.existsSync()) {
+            searchDirs.add(dir);
+          }
+        } catch (_) {}
+      }
+
+      for (var dir in searchDirs) {
+        try {
+          final entities = dir.listSync();
+          for (var entity in entities) {
+            if (entity is File) {
+              final pathLower = entity.path.toLowerCase();
+              if (pathLower.endsWith('.xlsx') || pathLower.endsWith('.xls')) {
+                excelFiles.add(entity);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: const [
+              Icon(Icons.table_chart, color: Color(0xFF059669)),
+              SizedBox(width: 8),
+              Text('اختر ملف الإكسل (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 320,
+            child: excelFiles.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.folder_open, size: 54, color: Colors.grey),
+                          SizedBox(height: 12),
+                          Text(
+                            'لم يتم العثور على ملفات .xlsx في مجلد Downloads.\nيرجى وضع ملف القائمة في مجلد التنزيلات بهاتفك أو مجلد المستندات.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: excelFiles.length,
+                    itemBuilder: (ctx, i) {
+                      final f = excelFiles[i];
+                      final fileName = f.path.split('/').last;
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ListTile(
+                          leading: const Icon(Icons.description, color: Color(0xFF059669)),
+                          title: Text(fileName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          subtitle: Text(f.path,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                          onTap: () async {
+                            Navigator.pop(ctx);
+                            Uint8List bytes = await f.readAsBytes();
+                            _processExcelBytes(bytes);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ أثناء قراءة الملفات: $e')));
+      }
+    }
+  }
+
+  // ✅ اختيار ملف Excel يدوياً من أي مكان في ذاكرة الهاتف
+  Future<void> _pickExcelFileManually() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+      );
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        Uint8List bytes = await file.readAsBytes();
+        _processExcelBytes(bytes);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('خطأ في اختيار الملف يدوياً: $e')));
+      }
+    }
+  }
+
+  void _processExcelBytes(Uint8List bytes) async {
+    try {
+      var excel = excelPkg.Excel.decodeBytes(bytes);
+      int addedCount = 0;
+
+      for (var table in excel.tables.keys) {
+        var rows = excel.tables[table]!.rows;
+        if (rows.isEmpty) continue;
+
+        int startIndex = 0;
+        if (rows.isNotEmpty) {
+          String firstCell = extractCellString(rows[0][0]);
+          if (firstCell.contains('اللقب') || firstCell.contains('Nom') || firstCell.contains('الرقم')) {
+            startIndex = 1;
+          }
+        }
+
+        for (int i = startIndex; i < rows.length; i++) {
+          var row = rows[i];
+          if (row.isEmpty) continue;
+
+          String col0 = row.isNotEmpty ? extractCellString(row[0]) : '';
+          String col1 = row.length > 1 ? extractCellString(row[1]) : '';
+          String col2 = row.length > 2 ? extractCellString(row[2]) : '';
+          String col3 = row.length > 3 ? extractCellString(row[3]) : '01/01/2007';
+
+          String lastName = col0;
+          String firstName = col1;
+          String regNum = col2;
+
+          if (int.tryParse(col0) != null && row.length >= 4) {
+            regNum = col1;
+            lastName = col2;
+            firstName = col3;
+          }
+
+          if (lastName.isNotEmpty || firstName.isNotEmpty) {
+            widget.schoolClass.students.add(Student(
+              lastName: lastName,
+              firstName: firstName,
+              regNumber: regNum.isEmpty ? '2026${widget.schoolClass.students.length + addedCount + 1}' : regNum,
+              birthDate: col3.isEmpty ? '01/01/2007' : col3,
+              birthPlace: 'الجلفة',
+            ));
+            addedCount++;
+          }
+        }
+      }
+
+      await SchoolData.saveData();
+      setState(() {});
+      // ✅ سجل قسم للاستيراد
+      _addClassLog('استيراد تلاميذ من ملف Excel',
+          'تم استيراد $addedCount تلميذاً إلى قسم ${widget.schoolClass.name} من ملف رقمنة');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تم استيراد $addedCount تلميذاً بنجاح من الهاتف!')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ أثناء قراءة ملف الإكسل: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -2751,6 +3295,7 @@ $attendanceNotice
             Tab(icon: Icon(Icons.menu_book), text: 'دفتر النصوص'),
             Tab(icon: Icon(Icons.event_available), text: 'سجل الحضور'),
             Tab(icon: Icon(Icons.upload_file), text: 'استيراد رقمنة'),
+            Tab(icon: Icon(Icons.history), text: 'سجل القسم اليومي'),
           ],
         ),
       ),
@@ -3051,6 +3596,22 @@ $attendanceNotice
                                         label: const Text('العلامات', style: TextStyle(fontSize: 12)),
                                         onPressed: () => _showEditStudentGradesDialog(student),
                                       ),
+                                      // ✅ سجل التلميذ الفردي
+                                      TextButton.icon(
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: const Color(0xFF6A0DAD),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                                        ),
+                                        icon: const Icon(Icons.history, size: 18),
+                                        label: const Text('سجل التلميذ', style: TextStyle(fontSize: 12)),
+                                        onPressed: () => _showStudentPersonalLogDialog(student),
+                                      ),
+                                      // ✅ حذف تلميذ
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                                        tooltip: 'حذف التلميذ',
+                                        onPressed: () => _deleteStudent(student),
+                                      ),
                                     ],
                                   ),
                                 ],
@@ -3325,9 +3886,76 @@ $attendanceNotice
                     label: const Text('اختيار ملف من ذاكرة الهاتف', style: TextStyle(fontWeight: FontWeight.bold)),
                     onPressed: _importStudentsFromExcel,
                   ),
+                  const SizedBox(height: 16),
+                  // ✅ اختيار ملف يدوياً من أي مكان
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF059669),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    icon: const Icon(Icons.file_present),
+                    label: const Text('اختيار ملف يدوياً من أي مكان في الهاتف', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: _pickExcelFileManually,
+                  ),
                 ],
               ),
             ),
+          ),
+
+          // 6. تبويب السجل اليومي للقسم (بالوقت والتاريخ)
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F172A),
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.add),
+                        label: const Text('إضافة سجل يومي يدوي للقسم'),
+                        onPressed: _showAddClassLogDialog,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: widget.schoolClass.dailyLogs.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'لا توجد سجلات يومية للقسم بعد.\nابدأ بتسجيل الحضور أو تعديل العلامات أو استيراد التلاميذ.',
+                          textAlign: TextAlign.center,
+                        ))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: widget.schoolClass.dailyLogs.length,
+                        itemBuilder: (context, index) {
+                          final log = widget.schoolClass.dailyLogs[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: const Color(0xFF0F172A),
+                                child: const Icon(Icons.history, color: Colors.white, size: 20),
+                              ),
+                              title: Text(log.action, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text(
+                                '${log.details}\nالتاريخ: ${log.date} | الوقت: ${log.time} | المسجل: ${log.performedBy}',
+                              ),
+                              trailing: Text('${log.date} ${log.time}',
+                                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           ),
         ],
       ),
@@ -3339,221 +3967,5 @@ $attendanceNotice
         label: const Text('إضافة تلميذ'),
       ),
     );
-  }
-
-  void _showAddNoteDialog({LessonNote? note}) {
-    final dateCtrl = TextEditingController(text: note?.date ?? todayStr());
-    final titleCtrl = TextEditingController(text: note?.title ?? '');
-    final summaryCtrl = TextEditingController(text: note?.summary ?? '');
-    final homeworkCtrl = TextEditingController(text: note?.homework ?? '');
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(note == null ? 'إضافة مذكرة درس جديد' : 'تعديل مذكرة الدرس'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: dateCtrl, decoration: const InputDecoration(labelText: 'التاريخ')),
-              TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'عنوان الدرس والمحور')),
-              TextField(controller: summaryCtrl, maxLines: 3, decoration: const InputDecoration(labelText: 'خلاصة الدرس')),
-              TextField(controller: homeworkCtrl, decoration: const InputDecoration(labelText: 'الواجب المنزلي')),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
-          ElevatedButton(
-            onPressed: () async {
-              if (titleCtrl.text.trim().isNotEmpty) {
-                setState(() {
-                  if (note == null) {
-                    widget.schoolClass.lessonNotes.add(LessonNote(
-                      date: dateCtrl.text.trim(),
-                      title: titleCtrl.text.trim(),
-                      summary: summaryCtrl.text.trim(),
-                      homework: homeworkCtrl.text.trim(),
-                    ));
-                  } else {
-                    note.date = dateCtrl.text.trim();
-                    note.title = titleCtrl.text.trim();
-                    note.summary = summaryCtrl.text.trim();
-                    note.homework = homeworkCtrl.text.trim();
-                  }
-                });
-                await SchoolData.saveData();
-                if (mounted) Navigator.pop(context);
-              }
-            },
-            child: const Text('حفظ'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _importStudentsFromExcel() async {
-    try {
-      List<File> excelFiles = [];
-      List<Directory> searchDirs = [];
-
-      try {
-        final docDir = await getApplicationDocumentsDirectory();
-        searchDirs.add(docDir);
-      } catch (_) {}
-
-      for (var path in ['/storage/emulated/0/Download', '/storage/emulated/0/Documents']) {
-        try {
-          final dir = Directory(path);
-          if (dir.existsSync()) {
-            searchDirs.add(dir);
-          }
-        } catch (_) {}
-      }
-
-      for (var dir in searchDirs) {
-        try {
-          final entities = dir.listSync();
-          for (var entity in entities) {
-            if (entity is File) {
-              final pathLower = entity.path.toLowerCase();
-              if (pathLower.endsWith('.xlsx') || pathLower.endsWith('.xls')) {
-                excelFiles.add(entity);
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: const [
-              Icon(Icons.table_chart, color: Color(0xFF059669)),
-              SizedBox(width: 8),
-              Text('اختر ملف الإكسل (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            ],
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 320,
-            child: excelFiles.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.folder_open, size: 54, color: Colors.grey),
-                          SizedBox(height: 12),
-                          Text(
-                            'لم يتم العثور على ملفات .xlsx في مجلد Downloads.\nيرجى وضع ملف القائمة في مجلد التنزيلات بهاتفك أو مجلد المستندات.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: excelFiles.length,
-                    itemBuilder: (ctx, i) {
-                      final f = excelFiles[i];
-                      final fileName = f.path.split('/').last;
-                      return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        child: ListTile(
-                          leading: const Icon(Icons.description, color: Color(0xFF059669)),
-                          title: Text(fileName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          subtitle: Text(f.path,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            Uint8List bytes = await f.readAsBytes();
-                            _processExcelBytes(bytes);
-                          },
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ أثناء قراءة الملفات: $e')));
-      }
-    }
-  }
-
-  void _processExcelBytes(Uint8List bytes) async {
-    try {
-      var excel = excelPkg.Excel.decodeBytes(bytes);
-      int addedCount = 0;
-
-      for (var table in excel.tables.keys) {
-        var rows = excel.tables[table]!.rows;
-        if (rows.isEmpty) continue;
-
-        int startIndex = 0;
-        if (rows.isNotEmpty) {
-          String firstCell = extractCellString(rows[0][0]);
-          if (firstCell.contains('اللقب') || firstCell.contains('Nom') || firstCell.contains('الرقم')) {
-            startIndex = 1;
-          }
-        }
-
-        for (int i = startIndex; i < rows.length; i++) {
-          var row = rows[i];
-          if (row.isEmpty) continue;
-
-          String col0 = row.isNotEmpty ? extractCellString(row[0]) : '';
-          String col1 = row.length > 1 ? extractCellString(row[1]) : '';
-          String col2 = row.length > 2 ? extractCellString(row[2]) : '';
-          String col3 = row.length > 3 ? extractCellString(row[3]) : '01/01/2007';
-
-          String lastName = col0;
-          String firstName = col1;
-          String regNum = col2;
-
-          if (int.tryParse(col0) != null && row.length >= 4) {
-            regNum = col1;
-            lastName = col2;
-            firstName = col3;
-          }
-
-          if (lastName.isNotEmpty || firstName.isNotEmpty) {
-            widget.schoolClass.students.add(Student(
-              lastName: lastName,
-              firstName: firstName,
-              regNumber: regNum.isEmpty ? '2026${widget.schoolClass.students.length + addedCount + 1}' : regNum,
-              birthDate: col3.isEmpty ? '01/01/2007' : col3,
-              birthPlace: 'الجلفة',
-            ));
-            addedCount++;
-          }
-        }
-      }
-
-      await SchoolData.saveData();
-      setState(() {});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تم استيراد $addedCount تلميذاً بنجاح من الهاتف!')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ أثناء قراءة ملف الإكسل: $e')));
-      }
-    }
   }
 }
