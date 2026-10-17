@@ -5,20 +5,27 @@ allprojects {
     }
 }
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
-
+rootProject.buildDir = "../build"
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
 subprojects {
     project.evaluationDependsOn(":app")
 }
 
-tasks.register<Delete>("clean") {
-    delete(rootProject.layout.buildDirectory)
+// 👇 الكود الهندسي السحري لإجبار جميع المكتبات (مثل file_picker) على التوافق مع إصدار 36
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android {
+                if (compileSdkVersion == 34 || compileSdkVersion < 36) {
+                    compileSdkVersion 36
+                }
+            }
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
 }
